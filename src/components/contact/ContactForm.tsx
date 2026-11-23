@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { CheckIcon } from "@/components/ui/icons";
+import { sendContactMessage } from "@/api";
 
 /**
  * ContactForm — letter on floral paper, only the 5 pastel tokens.
@@ -49,6 +50,9 @@ export function ContactForm() {
   const [values, setValues] = useState<FormValues>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
   const [sent, setSent] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [website, setWebsite] = useState("");
 
   const update = (name: keyof FormValues, value: string) => {
     setValues((current) => ({ ...current, [name]: value }));
@@ -61,12 +65,41 @@ export function ContactForm() {
     }
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const found = validate(values);
     setErrors(found);
+    setFormError(null);
     if (Object.keys(found).length > 0) return;
-    setSent(true);
+    setPending(true);
+    try {
+      const result = await sendContactMessage({ ...values, website });
+      if (result.ok) {
+        setSent(true);
+      } else if (result.fieldErrors) {
+        const fieldErrors = result.fieldErrors;
+        // Order number and topic have no inline error slot, so always show
+        // the general message too — the shopper is never left guessing.
+        setFormError(
+          fieldErrors.orderNumber
+            ? `${result.error} ${fieldErrors.orderNumber}`
+            : result.error,
+        );
+        setErrors((current) => {
+          const next = { ...current };
+          for (const [key, message] of Object.entries(fieldErrors)) {
+            if (key in values && typeof message === "string") {
+              next[key as keyof FormValues] = message;
+            }
+          }
+          return next;
+        });
+      } else {
+        setFormError(result.error);
+      }
+    } finally {
+      setPending(false);
+    }
   };
 
   if (sent) {
@@ -111,6 +144,17 @@ export function ContactForm() {
             "repeating-linear-gradient(90deg, #c5d1b3 0 18px, #ffc5c2 18px 36px, #f3a39a 36px 54px, #dc7954 54px 72px)",
         }}
       />
+
+      <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+        <input
+          type="text"
+          name="website"
+          tabIndex={-1}
+          autoComplete="off"
+          value={website}
+          onChange={(e) => setWebsite(e.target.value)}
+        />
+      </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3 pt-2">
         <h2 className="font-display text-[clamp(1.6rem,2.6vw,2.1rem)] leading-none text-burnt-100">
@@ -213,7 +257,7 @@ export function ContactForm() {
           type="text"
           value={values.orderNumber}
           onChange={(e) => update("orderNumber", e.target.value)}
-          placeholder="AP-2481"
+          placeholder="AP-02481"
           className="mt-1 w-full border-b border-burnt-100/20 bg-transparent py-3 text-[0.95rem] text-burnt-100 outline-none transition-colors placeholder:text-burnt-100/30 focus:border-burnt sm:max-w-[240px]"
         />
       </div>
@@ -249,12 +293,19 @@ export function ContactForm() {
         )}
       </div>
 
+      {formError && (
+        <p role="alert" className="mt-6 text-[0.8rem] text-burnt-400">
+          {formError}
+        </p>
+      )}
+
       <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
         <button
           type="submit"
-          className="rounded-full bg-burnt px-10 py-4 text-[0.9rem] font-medium text-floral transition-colors duration-300 hover:bg-burnt-400"
+          disabled={pending}
+          className="rounded-full bg-burnt px-10 py-4 text-[0.9rem] font-medium text-floral transition-colors duration-300 hover:bg-burnt-400 disabled:opacity-60"
         >
-          Send message
+          {pending ? "Sending…" : "Send message"}
         </button>
         <p className="text-[0.82rem] leading-relaxed text-burnt-100/50">
           No newsletters, no sharing. Just a reply.
