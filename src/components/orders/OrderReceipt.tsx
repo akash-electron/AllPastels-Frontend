@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import {
   OrderLines,
   OrderStatusPill,
@@ -7,6 +10,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { CheckIcon, TruckIcon } from "@/components/ui/icons";
 import { formatPrice, pluralize } from "@/lib/utils";
+import { payOrder } from "@/lib/pay-order";
 import type {
   OrderDetail,
   OrderPaymentMethod,
@@ -41,26 +45,47 @@ function paymentStatusLabel(status: OrderPaymentStatus): string {
 export function OrderReceipt({
   order,
   celebrate = false,
-  lookupEmail,
+  lookupToken,
+  payment,
+  onReload,
 }: {
   order: OrderDetail;
   celebrate?: boolean;
-  lookupEmail?: string;
+  lookupToken?: string;
+  payment?: string;
+  onReload?: () => void | Promise<void>;
 }) {
   const firstName = order.customerName?.trim().split(/\s+/)[0] || "";
+  const [paying, setPaying] = useState(false);
   const timeline =
     order.statusHistory.length > 0
       ? order.statusHistory
       : [{ status: order.status, at: order.placedOn }];
-  const detailsHref = lookupEmail
-    ? `/orders/${encodeURIComponent(order.id)}?email=${encodeURIComponent(
-        lookupEmail,
+  const handlePayNow = async () => {
+    setPaying(true);
+    const result = await payOrder({ orderNumber: order.id, lookupToken });
+    setPaying(false);
+    if (result.status === "paid") {
+      if (onReload) await onReload();
+      else window.location.reload();
+    }
+  };
+
+  const detailsHref = lookupToken
+    ? `/orders/${encodeURIComponent(order.id)}?t=${encodeURIComponent(
+        lookupToken,
       )}`
     : `/orders/${encodeURIComponent(order.id)}`;
 
   return (
     <div className="pb-16 pt-10 sm:pb-20 sm:pt-14">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
+        {payment === "pending" || payment === "cancelled" ? (
+          <div className="mb-6 border border-burnt/40 bg-burnt-900/30 px-5 py-4 text-sm text-burnt-200">
+            Your payment didn&apos;t go through. Your order is saved — you can
+            pay now.
+          </div>
+        ) : null}
         {celebrate ? (
           <div className="mx-auto max-w-2xl text-center">
             <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-burnt/30 bg-burnt-900 text-burnt-400">
@@ -270,6 +295,21 @@ export function OrderReceipt({
                   </div>
                 ) : null}
               </dl>
+              {order.paymentMethod === "online" &&
+              (order.paymentStatus === "pending" ||
+                order.paymentStatus === "failed") &&
+              order.status === "placed" ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  className="mt-4 w-full"
+                  disabled={paying}
+                  onClick={() => void handlePayNow()}
+                >
+                  {paying ? "Opening payment\u2026" : "Pay now"}
+                </Button>
+              ) : null}
             </section>
 
             <section className="border border-line bg-floral px-5 py-5">

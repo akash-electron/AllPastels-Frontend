@@ -9,28 +9,32 @@ import type { OrderDetail } from "@/types/order";
 
 export function OrderDetailsClient({
   orderNumber,
-  email,
+  token,
+  payment,
 }: {
   orderNumber: string;
-  email?: string;
+  token?: string;
+  payment?: string;
 }) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [resolvedToken, setResolvedToken] = useState<string | undefined>(token);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = email
-      ? await lookupOrder({ orderNumber, email })
+    const result = token
+      ? await lookupOrder({ orderNumber, token })
       : await getOrder(orderNumber);
     if (result.ok) {
       setOrder(result.order);
+      setResolvedToken(result.lookupToken ?? token);
     } else {
       setError(result.error);
     }
     setLoading(false);
-  }, [email, orderNumber]);
+  }, [token, orderNumber]);
 
   useEffect(() => {
     const timer = setTimeout(load, 0);
@@ -76,5 +80,12 @@ export function OrderDetailsClient({
     );
   }
 
-  return <OrderReceipt order={order} lookupEmail={email} />;
+  return (
+    <OrderReceipt
+      order={order}
+      lookupToken={resolvedToken}
+      payment={payment}
+      onReload={load}
+    />
+  );
 }

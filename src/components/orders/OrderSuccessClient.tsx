@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { getOrder, lookupOrder } from "@/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { confirmStripe, getOrder, lookupOrder } from "@/api";
 import { OrderReceipt } from "@/components/orders/OrderReceipt";
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
@@ -9,33 +9,49 @@ import type { OrderDetail } from "@/types/order";
 
 export function OrderSuccessClient({
   orderNumber,
-  email,
+  token,
+  sessionId,
 }: {
   orderNumber: string;
-  email?: string;
+  token?: string;
+  sessionId?: string;
 }) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
+  const [resolvedToken, setResolvedToken] = useState<string | undefined>(token);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = email
-      ? await lookupOrder({ orderNumber, email })
+    const result = token
+      ? await lookupOrder({ orderNumber, token })
       : await getOrder(orderNumber);
     if (result.ok) {
       setOrder(result.order);
+      setResolvedToken(result.lookupToken ?? token);
     } else {
       setError(result.error);
     }
     setLoading(false);
-  }, [email, orderNumber]);
+  }, [token, orderNumber]);
+
+  const confirmedRef = useRef(false);
 
   useEffect(() => {
-    const timer = setTimeout(load, 0);
+    const timer = setTimeout(async () => {
+      if (sessionId && !confirmedRef.current) {
+        confirmedRef.current = true;
+        try {
+          await confirmStripe({ orderNumber, sessionId, lookupToken: token });
+        } catch {
+          // Ignore; webhook may still complete the payment.
+        }
+      }
+      await load();
+    }, 0);
     return () => clearTimeout(timer);
-  }, [load]);
+  }, [load, orderNumber, sessionId, token]);
 
   if (loading) {
     return (
@@ -75,5 +91,5 @@ export function OrderSuccessClient({
     );
   }
 
-  return <OrderReceipt order={order} celebrate lookupEmail={email} />;
+  return <OrderReceipt order={order} celebrate lookupToken={resolvedToken} />;
 }

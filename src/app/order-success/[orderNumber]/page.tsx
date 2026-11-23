@@ -9,12 +9,17 @@ export const metadata: Metadata = {
 
 type PageProps = {
   params: Promise<{ orderNumber: string }>;
-  searchParams: Promise<{ email?: string | string[] }>;
+  searchParams: Promise<{ t?: string | string[]; session_id?: string | string[] }>;
 };
 
 export default async function Page({ params, searchParams }: PageProps) {
   const { orderNumber } = await params;
   const query = await searchParams;
-  const email = Array.isArray(query.email) ? query.email[0] : query.email;
-  return <OrderSuccessClient orderNumber={orderNumber} email={email} />;
+  const t = Array.isArray(query.t) ? query.t[0] : query.t;
+  const sessionId = Array.isArray(query.session_id)
+    ? query.session_id[0]
+    : query.session_id;
+  return (
+    <OrderSuccessClient orderNumber={orderNumber} token={t} sessionId={sessionId} />
+  );
 }

@@ -9,12 +9,15 @@ export const metadata: Metadata = {
 
 type PageProps = {
   params: Promise<{ orderNumber: string }>;
-  searchParams: Promise<{ email?: string | string[] }>;
+  searchParams: Promise<{ t?: string | string[]; payment?: string | string[] }>;
 };
 
 export default async function Page({ params, searchParams }: PageProps) {
   const { orderNumber } = await params;
   const query = await searchParams;
-  const email = Array.isArray(query.email) ? query.email[0] : query.email;
-  return <OrderDetailsClient orderNumber={orderNumber} email={email} />;
+  const t = Array.isArray(query.t) ? query.t[0] : query.t;
+  const payment = Array.isArray(query.payment) ? query.payment[0] : query.payment;
+  return (
+    <OrderDetailsClient orderNumber={orderNumber} token={t} payment={payment} />
+  );
 }

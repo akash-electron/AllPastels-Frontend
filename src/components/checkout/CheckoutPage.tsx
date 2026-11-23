@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { placeGuestOrder, placeOrderFromCart, previewOrder } from "@/api";
+import { getPaymentOptions, placeGuestOrder, placeOrderFromCart, previewOrder } from "@/api";
 import { useAuth } from "@/components/store/AuthProvider";
 import { useStore } from "@/components/store/StoreProvider";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +18,7 @@ import {
 import { quoteShipping, quoteTax } from "@/lib/checkout-settings";
 import { productImageUrl } from "@/lib/images";
 import { COUPON_CODE_MAX_LENGTH, normalizeCouponCode } from "@/api/coupons/coupons.api";
+import { payOrder } from "@/lib/pay-order";
 import { SITE } from "@/data/site";
 import type { OrderPreview } from "@/types/order";
 import { cn, formatPrice, pluralize } from "@/lib/utils";
@@ -261,6 +262,11 @@ export function CheckoutPage() {
   const [couponError, setCouponError] = useState<string | null>(null);
   const couponRequestRef = useRef(0);
 
+  type PaymentChoice = "cod" | "razorpay" | "stripe";
+  const [paymentMethods, setPaymentMethods] = useState<PaymentChoice[]>(["cod"]);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentChoice>("cod");
+  const [paying, setPaying] = useState(false);
+
   const shippingQuote = quoteShipping(checkoutSettings, cartSubtotal);
   const taxQuote = quoteTax(checkoutSettings, cartSubtotal);
   const normalizedCoupon = normalizeCouponCode(couponCode);
@@ -284,11 +290,39 @@ export function CheckoutPage() {
       setValues((current) => ({
         ...current,
         fullName: current.fullName || session.name,
-        email: current.email || session.email,
+        email: current.email || session.email || "",
       }));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [session]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await getPaymentOptions();
+      if (cancelled) return;
+      if (result.ok) {
+        const available = result.options.methods.length
+          ? result.options.methods
+          : (["cod"] as PaymentChoice[]);
+        setPaymentMethods(available as PaymentChoice[]);
+        const initial =
+          result.options.defaultOnline &&
+          available.includes(result.options.defaultOnline)
+            ? result.options.defaultOnline
+            : available.includes("cod")
+              ? "cod"
+              : available[0];
+        setSelectedPayment(initial as PaymentChoice);
+      } else {
+        setPaymentMethods(["cod"]);
+        setSelectedPayment("cod");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Debounced server-side coupon check so the summary reflects the discount
   // before the customer submits. Request ids discard stale responses.
@@ -367,11 +401,16 @@ export function CheckoutPage() {
       checkoutKeyRef.current = newIdempotencyKey();
     }
     const idempotencyKey = checkoutKeyRef.current;
+    const isOnline = selectedPayment !== "cod";
+    const paymentMethod = isOnline ? "online" : "cod";
+    const paymentProvider = isOnline ? selectedPayment : undefined;
+
     const result = session
       ? await placeOrderFromCart({
           shippingAddress,
           couponCode: normalizedCoupon || undefined,
-          paymentMethod: "cod",
+          paymentMethod,
+          paymentProvider,
           idempotencyKey,
         })
       : await placeGuestOrder({
@@ -383,7 +422,8 @@ export function CheckoutPage() {
           shippingAddress,
           customerEmail: values.email.trim(),
           couponCode: normalizedCoupon || undefined,
-          paymentMethod: "cod",
+          paymentMethod,
+          paymentProvider,
           idempotencyKey,
         });
     setPlacing(false);
@@ -398,8 +438,29 @@ export function CheckoutPage() {
     else void clearCart();
     const query = session
       ? ""
-      : `?email=${encodeURIComponent(values.email.trim())}`;
-    router.push(`/order-success/${result.order.id}${query}`);
+      : result.lookupToken
+        ? `?t=${encodeURIComponent(result.lookupToken)}`
+        : "";
+
+    if (!isOnline) {
+      router.push(`/order-success/${result.order.id}${query}`);
+      return;
+    }
+
+    setPaying(true);
+    const payResult = await payOrder({
+      orderNumber: result.order.id,
+      lookupToken: result.lookupToken,
+    });
+    setPaying(false);
+
+    if (payResult.status === "paid") {
+      router.push(`/order-success/${result.order.id}${query}`);
+      return;
+    }
+
+    const paymentSuffix = query ? "&payment=pending" : "?payment=pending";
+    router.push(`/orders/${result.order.id}${query}${paymentSuffix}`);
   };
 
   if (!hydrated || !authHydrated) {
@@ -489,18 +550,53 @@ export function CheckoutPage() {
               description="Review your details and place the order when everything looks right."
             />
 
-            <div className="mt-6 flex gap-4 border border-line bg-surface/70 p-5 sm:p-6">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-line bg-floral text-burnt">
-                <LockIcon className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="font-display text-lg leading-snug">Cash on delivery</p>
-                <p className="ap-body mt-2 text-sm text-ink/60">
-                  Pay in cash when your parcel arrives. No card details are
-                  collected here. Online payment is not enabled on this
-                  storefront yet.
-                </p>
-              </div>
+            <div className="mt-6 grid gap-3">
+              {paymentMethods.map((method) => {
+                const selected = selectedPayment === method;
+                const label =
+                  method === "razorpay"
+                    ? "Pay online — UPI, cards, netbanking"
+                    : method === "stripe"
+                      ? "Pay by card (Stripe)"
+                      : "Cash on delivery";
+                const description =
+                  method === "razorpay"
+                    ? "UPI, cards, netbanking and wallets via Razorpay."
+                    : method === "stripe"
+                      ? "Secure card payment via Stripe."
+                      : "Pay in cash when your parcel arrives. No card details are collected here.";
+                return (
+                  <label
+                    key={method}
+                    className={cn(
+                      "flex cursor-pointer gap-4 border p-5 transition-colors",
+                      selected
+                        ? "border-burnt bg-burnt-900/20"
+                        : "border-line bg-surface/70 hover:border-ash-400",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value={method}
+                      checked={selected}
+                      onChange={() => setSelectedPayment(method)}
+                      className="mt-1.5 h-4 w-4 accent-burnt"
+                    />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-line bg-floral text-burnt">
+                      <LockIcon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-display text-lg leading-snug">
+                        {label}
+                      </span>
+                      <span className="ap-body mt-2 block text-sm text-ink/60">
+                        {description}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
             </div>
 
             <div className="ap-body mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-5 text-xs text-ink/55">
@@ -681,10 +777,14 @@ export function CheckoutPage() {
                 size="lg"
                 className="w-full"
                 withArrow
-                disabled={placing}
-                aria-busy={placing}
+                disabled={placing || paying}
+                aria-busy={placing || paying}
               >
-                {placing ? "Placing order\u2026" : `Place order \u2014 ${formatPrice(total)}`}
+                {placing
+                  ? "Placing order\u2026"
+                  : paying
+                    ? "Opening payment\u2026"
+                    : `Place order \u2014 ${formatPrice(total)}`}
               </Button>
 
               <p className="ap-body mt-4 text-center text-xs text-ink/50">
