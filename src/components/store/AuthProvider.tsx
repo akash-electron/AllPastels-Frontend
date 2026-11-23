@@ -13,10 +13,16 @@ import {
 import {
   restoreSession,
   signInCustomer,
+  signInWithGoogle,
   signOutRequest,
+  verifyOtp,
 } from "@/api";
 import { notifySessionChange } from "@/lib/session-events";
-import type { SignInResult } from "@/types/auth";
+import type {
+  GoogleSignInResult,
+  SignInResult,
+  VerifyOtpResult,
+} from "@/types/auth";
 
 /**
  * AuthProvider — client-side session state against the real backend.
@@ -32,7 +38,8 @@ import type { SignInResult } from "@/types/auth";
 
 export interface Session {
   name: string;
-  email: string;
+  email: string | null;
+  phone?: string | null;
   /** ISO timestamp — mirrors the backend profile's `createdAt`. */
   joinedAt: string;
 }
@@ -106,6 +113,8 @@ interface AuthValue {
   /** True once the session has been restored (and checked against /me). */
   hydrated: boolean;
   signIn: (input: { email: string; password: string }) => Promise<SignInResult>;
+  signInWithGoogle: (idToken: string) => Promise<GoogleSignInResult>;
+  verifyOtp: (input: { phone: string; code: string; name?: string }) => Promise<VerifyOtpResult>;
   signOut: () => void;
 }
 
@@ -121,13 +130,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const applyUser = useCallback((user: {
     name: string;
-    email: string;
+    email: string | null;
+    phone?: string | null;
     createdAt?: string;
   }) => {
     const existing = sessionStore.getSnapshot();
     sessionStore.set({
       name: user.name,
       email: user.email,
+      phone: user.phone,
       joinedAt:
         user.createdAt ??
         (existing && existing.email === user.email
@@ -169,12 +180,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback<AuthValue["signIn"]>(({ email, password }) =>
     signInCustomer({ email, password }).then((result) => {
       if (result.ok) {
-        applyUser({ name: result.user.name, email: result.user.email });
+        applyUser({
+          name: result.user.name,
+          email: result.user.email,
+          phone: result.user.phone,
+          createdAt: result.user.createdAt,
+        });
         notifySessionChange();
       }
       return result;
     }),
   [applyUser]);
+
+  const signInWithGoogleHandler = useCallback<AuthValue["signInWithGoogle"]>(
+    (idToken) =>
+      signInWithGoogle(idToken).then((result) => {
+        if (result.ok) {
+          applyUser({
+            name: result.user.name,
+            email: result.user.email,
+            phone: result.user.phone,
+            createdAt: result.user.createdAt,
+          });
+          notifySessionChange();
+        }
+        return result;
+      }),
+    [applyUser],
+  );
+
+  const verifyOtpHandler = useCallback<AuthValue["verifyOtp"]>(
+    (input) =>
+      verifyOtp(input).then((result) => {
+        if (result.ok) {
+          applyUser({
+            name: result.user.name,
+            email: result.user.email,
+            phone: result.user.phone,
+            createdAt: result.user.createdAt,
+          });
+          notifySessionChange();
+        }
+        return result;
+      }),
+    [applyUser],
+  );
 
   const signOut = useCallback(() => {
     sessionStore.set(null);
@@ -184,8 +234,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthValue>(
-    () => ({ session, hydrated, signIn, signOut }),
-    [session, hydrated, signIn, signOut],
+    () => ({
+      session,
+      hydrated,
+      signIn,
+      signInWithGoogle: signInWithGoogleHandler,
+      verifyOtp: verifyOtpHandler,
+      signOut,
+    }),
+    [session, hydrated, signIn, signInWithGoogleHandler, verifyOtpHandler, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

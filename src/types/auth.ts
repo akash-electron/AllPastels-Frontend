@@ -11,10 +11,24 @@
 export interface AuthUser {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
+  phone?: string | null;
   isEmailVerified: boolean;
+  isPhoneVerified?: boolean;
   createdAt?: string;
 }
+
+export type GoogleSignInResult =
+  | { ok: true; user: AuthUser }
+  | { ok: false; error: string };
+
+export type RequestOtpResult =
+  | { ok: true; message: string; expiresIn: number; resendIn: number }
+  | { ok: false; error: string; retryAfter?: number };
+
+export type VerifyOtpResult =
+  | { ok: true; user: AuthUser; isNewUser: boolean }
+  | { ok: false; error: string; nameRequired?: boolean };
 
 export type VerifyResult =
   | { ok: true }

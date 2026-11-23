@@ -137,7 +137,7 @@ export function AccountSettings({ session, joined, onSignOut }: AccountSettingsP
 
   const rows = [
     { label: "Name", value: session.name },
-    { label: "Email", value: session.email },
+    { label: session.email ? "Email" : "Phone", value: session.email ?? session.phone ?? "" },
     { label: "Member since", value: joined },
   ];
 
@@ -230,7 +230,7 @@ export function AccountSettings({ session, joined, onSignOut }: AccountSettingsP
           }
         >
           <p className="ap-body text-sm text-ink/65">
-            You are signed in as <span className="text-ink">{session.email}</span>.
+            You are signed in as <span className="text-ink">{session.email ?? session.phone}</span>.
             Signing out ends this session on this device — your bag and saved
             pieces stay right where they are.
           </p>

@@ -1,8 +1,11 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { AuthField, FieldAction } from "@/components/auth/AuthField";
+import { GoogleButton } from "@/components/auth/GoogleButton";
+import { PhoneOtpForm } from "@/components/auth/PhoneOtpForm";
 import { StrengthMeter } from "@/components/auth/StrengthMeter";
 import { Button } from "@/components/ui/Button";
 import { isValidEmail, passwordStrength } from "@/lib/auth";
@@ -29,6 +32,8 @@ interface FieldErrors {
 type ResendState = "idle" | "sending" | "sent" | "error";
 
 export function SignUpForm() {
+  const router = useRouter();
+  const [tab, setTab] = useState<"email" | "phone">("email");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -177,7 +182,44 @@ export function SignUpForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate>
+    <div>
+      <GoogleButton onSuccess={() => router.push("/account")} />
+
+      <div className="my-6 flex items-center gap-3">
+        <span className="h-px flex-1 bg-line" />
+        <span className="ap-eyebrow text-ink/40">or</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setTab("email")}
+          className={
+            tab === "email"
+              ? "ap-eyebrow border border-burnt bg-burnt px-4 py-2 text-floral"
+              : "ap-eyebrow border border-line px-4 py-2 text-ink/60 transition-colors hover:text-ink"
+          }
+        >
+          Email
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("phone")}
+          className={
+            tab === "phone"
+              ? "ap-eyebrow border border-burnt bg-burnt px-4 py-2 text-floral"
+              : "ap-eyebrow border border-line px-4 py-2 text-ink/60 transition-colors hover:text-ink"
+          }
+        >
+          Phone
+        </button>
+      </div>
+
+      {tab === "phone" ? (
+        <PhoneOtpForm onSuccess={() => router.push("/account")} />
+      ) : (
+        <form onSubmit={handleSubmit} noValidate>
       <div className="grid gap-5">
         <AuthField
           id="signup-name"
@@ -275,6 +317,8 @@ export function SignUpForm() {
           Sign in
         </Link>
       </p>
-    </form>
+      </form>
+      )}
+    </div>
   );
 }

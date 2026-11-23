@@ -153,7 +153,7 @@ export function AccountPage() {
                 </h1>
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   <p className="ap-body min-w-0 truncate text-sm text-ink/60">
-                    {session.email}
+                    {session.email ?? session.phone}
                   </p>
                   <span aria-hidden="true" className="hidden h-3 w-px bg-line sm:block" />
                   <p className="ap-eyebrow text-ink/45">Member since {joined}</p>

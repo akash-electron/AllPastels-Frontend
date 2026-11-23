@@ -4,6 +4,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthField, FieldAction } from "@/components/auth/AuthField";
+import { GoogleButton } from "@/components/auth/GoogleButton";
+import { PhoneOtpForm } from "@/components/auth/PhoneOtpForm";
 import { useAuth } from "@/components/store/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { isValidEmail } from "@/lib/auth";
@@ -36,6 +38,7 @@ export function SignInForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [tab, setTab] = useState<"email" | "phone">("email");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [pending, setPending] = useState(false);
   const [verificationRequired, setVerificationRequired] = useState(false);
@@ -95,8 +98,45 @@ export function SignInForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} noValidate>
-      {errors.form && (
+    <div>
+      <GoogleButton onSuccess={() => router.push("/account")} />
+
+      <div className="my-6 flex items-center gap-3">
+        <span className="h-px flex-1 bg-line" />
+        <span className="ap-eyebrow text-ink/40">or</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setTab("email")}
+          className={
+            tab === "email"
+              ? "ap-eyebrow border border-burnt bg-burnt px-4 py-2 text-floral"
+              : "ap-eyebrow border border-line px-4 py-2 text-ink/60 transition-colors hover:text-ink"
+          }
+        >
+          Email
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("phone")}
+          className={
+            tab === "phone"
+              ? "ap-eyebrow border border-burnt bg-burnt px-4 py-2 text-floral"
+              : "ap-eyebrow border border-line px-4 py-2 text-ink/60 transition-colors hover:text-ink"
+          }
+        >
+          Phone
+        </button>
+      </div>
+
+      {tab === "phone" ? (
+        <PhoneOtpForm onSuccess={() => router.push("/account")} />
+      ) : (
+        <form onSubmit={handleSubmit} noValidate>
+          {errors.form && (
         <p
           role="alert"
           className="ap-body mb-5 border border-burnt/40 bg-burnt-900 px-4 py-3 text-sm text-burnt-200"
@@ -199,6 +239,8 @@ export function SignInForm() {
           Create an account
         </Link>
       </p>
-    </form>
+        </form>
+      )}
+    </div>
   );
 }

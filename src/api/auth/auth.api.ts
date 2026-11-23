@@ -24,11 +24,14 @@ import { API_BASE_URL } from "@/utils/env";
 import type {
   AuthUser,
   ForgotPasswordResult,
+  GoogleSignInResult,
   RegisterResult,
+  RequestOtpResult,
   ResendVerificationResult,
   ResetPasswordResult,
   SessionRestoreResult,
   SignInResult,
+  VerifyOtpResult,
   VerifyResult,
 } from "@/types/auth";
 
@@ -40,12 +43,23 @@ import type {
 function coerceRouteUser(data: unknown): AuthUser | null {
   if (!data || typeof data !== "object") return null;
   const record = data as Record<string, unknown>;
-  if (typeof record.name !== "string" || typeof record.email !== "string") return null;
+  if (typeof record.name !== "string") return null;
+  if (record.email !== null && typeof record.email !== "string") return null;
   return {
     id: typeof record.id === "string" ? record.id : "",
     name: record.name,
-    email: record.email,
+    email: typeof record.email === "string" ? record.email : null,
+    phone:
+      typeof record.phone === "string"
+        ? record.phone
+        : record.phone === null
+          ? null
+          : undefined,
     isEmailVerified: record.isEmailVerified === true,
+    isPhoneVerified:
+      typeof record.isPhoneVerified === "boolean"
+        ? record.isPhoneVerified
+        : undefined,
     createdAt: typeof record.createdAt === "string" ? record.createdAt : undefined,
   };
 }
@@ -253,4 +267,85 @@ export async function resetPassword(
   );
   if (body.ok !== true) return { ok: false, error: body.error as string };
   return { ok: true };
+}
+
+/**
+ * `POST /auth/google` — exchanges a Google ID token for a session. The
+ * Route Handler writes the JWT to the HttpOnly cookie; we only receive the
+ * profile.
+ */
+export async function signInWithGoogle(idToken: string): Promise<GoogleSignInResult> {
+  const response = await apiPostBody("/auth/google", { idToken });
+  if (!response) {
+    return { ok: false, error: NETWORK_ERROR_MESSAGE };
+  }
+  const body = await readRouteBody(response, "Google sign-in did not complete.");
+  if (body.ok !== true) {
+    return { ok: false, error: body.error as string };
+  }
+  const user = coerceRouteUser(body.user);
+  if (!user) {
+    return { ok: false, error: "Google sign-in did not complete — please try again." };
+  }
+  return { ok: true, user };
+}
+
+/**
+ * `POST /auth/otp/request` — asks the backend to send a WhatsApp OTP.
+ */
+export async function requestOtp(phone: string): Promise<RequestOtpResult> {
+  const response = await apiPostBody("/auth/otp/request", {
+    phone: phone.trim(),
+  });
+  if (!response) {
+    return { ok: false, error: NETWORK_ERROR_MESSAGE };
+  }
+  const body = await readRouteBody(response, "Could not send the code.");
+  if (body.ok !== true) {
+    const retryAfter =
+      typeof body.retryAfter === "number" ? body.retryAfter : undefined;
+    return { ok: false, error: body.error as string, retryAfter };
+  }
+  return {
+    ok: true,
+    message:
+      typeof body.message === "string" ? body.message : "Code sent.",
+    expiresIn: typeof body.expiresIn === "number" ? body.expiresIn : 300,
+    resendIn: typeof body.resendIn === "number" ? body.resendIn : 60,
+  };
+}
+
+/**
+ * `POST /auth/otp/verify` — verifies the WhatsApp OTP (and optional name
+ * for first-time users) and establishes the session.
+ */
+export async function verifyOtp(input: {
+  phone: string;
+  code: string;
+  name?: string;
+}): Promise<VerifyOtpResult> {
+  const response = await apiPostBody("/auth/otp/verify", {
+    phone: input.phone.trim(),
+    code: input.code.trim(),
+    ...(input.name ? { name: input.name.trim() } : {}),
+  });
+  if (!response) {
+    return { ok: false, error: NETWORK_ERROR_MESSAGE };
+  }
+  const body = await readRouteBody(response, "Verification did not complete.");
+  if (body.ok !== true) {
+    if (body.nameRequired === true) {
+      return { ok: false, error: body.error as string, nameRequired: true };
+    }
+    return { ok: false, error: body.error as string };
+  }
+  const user = coerceRouteUser(body.user);
+  if (!user) {
+    return { ok: false, error: "Verification did not complete — please try again." };
+  }
+  return {
+    ok: true,
+    user,
+    isNewUser: body.isNewUser === true,
+  };
 }

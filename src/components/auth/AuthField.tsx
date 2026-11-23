@@ -18,9 +18,11 @@ interface AuthFieldProps {
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  inputMode?: "none" | "text" | "tel" | "url" | "email" | "numeric" | "decimal" | "search";
   autoComplete?: string;
   placeholder?: string;
   error?: string;
+  maxLength?: number;
   /** Slot inside the field, on the right — e.g. a show/hide toggle. */
   trailing?: ReactNode;
 }
@@ -31,9 +33,11 @@ export function AuthField({
   value,
   onChange,
   type = "text",
+  inputMode,
   autoComplete,
   placeholder,
   error,
+  maxLength,
   trailing,
 }: AuthFieldProps) {
   return (
@@ -59,10 +63,12 @@ export function AuthField({
         <input
           id={id}
           type={type}
+          inputMode={inputMode}
           value={value}
           placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
           autoComplete={autoComplete}
+          maxLength={maxLength}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${id}-error` : undefined}
           className={cn(
