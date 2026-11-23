@@ -3,14 +3,18 @@ import { backendApi, backendProxyResponse } from "@/lib/server-api";
 /**
  * POST /api/orders/lookup — secure guest order lookup.
  *
- * Guests prove ownership with the order number and the email used at checkout.
- * The backend applies rate limiting and returns a generic 404 for both unknown
- * orders and mismatched emails, preventing order-number enumeration.
+ * Guests prove ownership with the order number and the email used at checkout,
+ * or with a signed lookup token. The backend applies rate limiting and returns
+ * a generic 404 for both unknown orders and mismatched credentials, preventing
+ * order-number enumeration.
  */
+
+const LOOKUP_TOKEN_REGEX = /^\d{9,11}\.[A-Za-z0-9_-]{43}$/;
 
 interface LookupPayload {
   orderNumber?: unknown;
   email?: unknown;
+  token?: unknown;
 }
 
 export async function POST(request: Request) {
@@ -24,11 +28,16 @@ export async function POST(request: Request) {
     );
   }
 
+  const hasValidEmail =
+    typeof payload.email === "string" && payload.email.trim().length > 0;
+  const hasValidToken =
+    typeof payload.token === "string" &&
+    LOOKUP_TOKEN_REGEX.test(payload.token.trim());
+
   if (
     typeof payload.orderNumber !== "string" ||
     !/^AP-\d{5}$/.test(payload.orderNumber.trim()) ||
-    typeof payload.email !== "string" ||
-    !payload.email.trim()
+    (!hasValidEmail && !hasValidToken)
   ) {
     return Response.json(
       { ok: false, error: "Please enter a valid order number and email." },
@@ -36,15 +45,21 @@ export async function POST(request: Request) {
     );
   }
 
+  const body: { orderNumber: string; email?: string; token?: string } = {
+    orderNumber: payload.orderNumber.trim(),
+  };
+  if (hasValidToken) {
+    body.token = (payload.token as string).trim();
+  } else {
+    body.email = (payload.email as string).trim();
+  }
+
   return backendProxyResponse(
     await backendApi(
       "/orders/lookup",
       {
         method: "POST",
-        body: JSON.stringify({
-          orderNumber: payload.orderNumber.trim(),
-          email: payload.email.trim(),
-        }),
+        body: JSON.stringify(body),
       },
       "none",
     ),

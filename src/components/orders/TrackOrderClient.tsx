@@ -29,9 +29,11 @@ export function TrackOrderClient() {
       return;
     }
     router.push(
-      `/orders/${encodeURIComponent(result.order.id)}?email=${encodeURIComponent(
-        email.trim(),
-      )}`,
+      result.lookupToken
+        ? `/orders/${encodeURIComponent(result.order.id)}?t=${encodeURIComponent(
+            result.lookupToken,
+          )}`
+        : `/orders/${encodeURIComponent(result.order.id)}`,
     );
   };
 

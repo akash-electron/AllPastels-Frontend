@@ -12,6 +12,7 @@ interface GuestOrderPayload {
   couponCode?: unknown;
   customerEmail?: unknown;
   paymentMethod?: unknown;
+  paymentProvider?: unknown;
   idempotencyKey?: unknown;
 }
 
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
     couponCode?: string;
     customerEmail?: string;
     paymentMethod?: "cod" | "online";
+    paymentProvider?: "razorpay" | "stripe";
     idempotencyKey?: string;
   } = { items };
 
@@ -134,6 +136,19 @@ export async function POST(request: Request) {
       );
     }
     forwarded.paymentMethod = payload.paymentMethod;
+  }
+
+  if (payload.paymentProvider !== undefined) {
+    if (
+      payload.paymentProvider !== "razorpay" &&
+      payload.paymentProvider !== "stripe"
+    ) {
+      return Response.json(
+        { ok: false, error: "Invalid payment provider." },
+        { status: 400 },
+      );
+    }
+    forwarded.paymentProvider = payload.paymentProvider;
   }
 
   if (payload.idempotencyKey !== undefined) {

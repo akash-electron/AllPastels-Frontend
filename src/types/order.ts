@@ -88,6 +88,7 @@ export interface PlaceOrderInput {
   shippingAddress: CheckoutShippingAddress;
   couponCode?: string;
   paymentMethod?: OrderPaymentMethod;
+  paymentProvider?: "razorpay" | "stripe";
   idempotencyKey?: string;
 }
 
@@ -103,13 +104,13 @@ export interface PlaceGuestOrderInput {
   couponCode?: string;
   customerEmail?: string;
   paymentMethod?: OrderPaymentMethod;
+  paymentProvider?: "razorpay" | "stripe";
   idempotencyKey?: string;
 }
 
-export interface LookupOrderInput {
-  orderNumber: string;
-  email: string;
-}
+export type LookupOrderInput =
+  | { orderNumber: string; email: string }
+  | { orderNumber: string; token: string };
 
 /** Server-priced bag estimate used by the checkout coupon preview. */
 export interface OrderPreview {

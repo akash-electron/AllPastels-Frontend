@@ -1,5 +1,6 @@
 import { NETWORK_ERROR_MESSAGE } from "@/lib/api-client";
 import { readSessionToken } from "@/lib/server-auth";
+import { applyProxyHeaders } from "@/lib/server-proxy-headers";
 import { API_BASE_URL } from "@/utils/env";
 
 /**
@@ -40,6 +41,8 @@ export async function cartBackend(
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
   if (init.body) headers.set("Content-Type", "application/json");
+
+  await applyProxyHeaders(headers);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/cart${path}`, {

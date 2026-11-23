@@ -1,5 +1,6 @@
 import { NETWORK_ERROR_MESSAGE } from "@/lib/api-client";
 import { readSessionToken } from "@/lib/server-auth";
+import { applyProxyHeaders } from "@/lib/server-proxy-headers";
 import { API_BASE_URL } from "@/utils/env";
 
 /**
@@ -43,6 +44,8 @@ export async function backendApi(
   }
 
   if (init.body) headers.set("Content-Type", "application/json");
+
+  await applyProxyHeaders(headers);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api${path}`, {
@@ -94,6 +97,9 @@ export function backendProxyResponse(
         data: result.body.data,
         ...(result.body.summary !== undefined
           ? { summary: result.body.summary }
+          : {}),
+        ...(typeof result.body.lookupToken === "string"
+          ? { lookupToken: result.body.lookupToken }
           : {}),
       },
       { status: result.status },

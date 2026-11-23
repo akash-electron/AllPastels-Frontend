@@ -15,6 +15,13 @@ export interface ApiRouteBody {
   emailSent?: unknown;
   user?: unknown;
   data?: unknown;
+  fieldErrors?: unknown;
   summary?: unknown;
+  lookupToken?: unknown;
   unauthorized?: unknown;
+  expiresIn?: unknown;
+  resendIn?: unknown;
+  retryAfter?: unknown;
+  isNewUser?: unknown;
+  nameRequired?: unknown;
 }

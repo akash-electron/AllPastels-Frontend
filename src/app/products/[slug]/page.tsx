@@ -114,8 +114,11 @@ function ProductJsonLd({
   return (
     <script
       type="application/ld+json"
-      // Serialised from a known-shape object, so no user input is involved.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+      // Product name/description come from the admin, so escape "<" — a value
+      // containing "</script>" would otherwise end this tag early (stored XSS).
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify(data).replace(/</g, "\\u003c"),
+      }}
     />
   );
 }

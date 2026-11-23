@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import type { AuthUser } from "@/types/auth";
+import { applyProxyHeaders } from "@/lib/server-proxy-headers";
 import { API_BASE_URL } from "@/utils/env";
 
 /**
@@ -34,12 +35,17 @@ export function coerceUser(data: unknown): BackendAuthUser | null {
   const record = data as Record<string, unknown>;
   if (typeof record.id !== "string") return null;
   if (typeof record.name !== "string") return null;
-  if (typeof record.email !== "string") return null;
+  if (record.email !== null && typeof record.email !== "string") return null;
   return {
     id: record.id,
     name: record.name,
-    email: record.email,
+    email: typeof record.email === "string" ? record.email : null,
+    phone: typeof record.phone === "string" ? record.phone : record.phone === null ? null : undefined,
     isEmailVerified: record.isEmailVerified === true,
+    isPhoneVerified:
+      typeof record.isPhoneVerified === "boolean"
+        ? record.isPhoneVerified
+        : undefined,
     createdAt: typeof record.createdAt === "string" ? record.createdAt : undefined,
   };
 }
@@ -54,9 +60,11 @@ export async function backendPost(
   body: unknown,
 ): Promise<{ status: number; body: BackendJson; reachable: boolean } | null> {
   try {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    await applyProxyHeaders(headers);
     const response = await fetch(`${API_BASE_URL}/api/auth${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body ?? {}),
     });
     const data = (await response.json().catch(() => ({}))) as BackendJson;
@@ -112,9 +120,11 @@ export async function fetchCurrentUser(): Promise<BackendAuthUser | null> {
   const token = await readSessionToken();
   if (!token) return null;
   try {
+    const headers = new Headers({ Authorization: `Bearer ${token}` });
+    await applyProxyHeaders(headers);
     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
+      headers,
       cache: "no-store",
     });
     if (!response.ok) return null;

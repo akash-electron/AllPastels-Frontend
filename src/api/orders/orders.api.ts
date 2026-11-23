@@ -37,7 +37,7 @@ export type OrdersResult =
   | { ok: false; error: string; unauthorized?: boolean };
 
 export type PlaceOrderResult =
-  | { ok: true; order: OrderDetail }
+  | { ok: true; order: OrderDetail; lookupToken?: string }
   | { ok: false; error: string; status: number; unauthorized?: boolean };
 
 export type CancelOrderResult =
@@ -49,7 +49,7 @@ export type PreviewOrderResult =
   | { ok: false; error: string; status: number; unauthorized?: boolean };
 
 export type GetOrderResult =
-  | { ok: true; order: OrderDetail }
+  | { ok: true; order: OrderDetail; lookupToken?: string }
   | {
       ok: false;
       error: string;
@@ -447,7 +447,13 @@ export async function placeGuestOrder(
     };
   }
 
-  return { ok: true, order };
+  return {
+    ok: true,
+    order,
+    ...(typeof body.lookupToken === "string"
+      ? { lookupToken: body.lookupToken }
+      : {}),
+  };
 }
 
 /** `GET /api/orders/:orderNumber` — owner/admin order details. */
@@ -519,7 +525,13 @@ export async function lookupOrder(
       status: response.status,
     };
   }
-  return { ok: true, order };
+  return {
+    ok: true,
+    order,
+    ...(typeof body.lookupToken === "string"
+      ? { lookupToken: body.lookupToken }
+      : {}),
+  };
 }
 
 /**
