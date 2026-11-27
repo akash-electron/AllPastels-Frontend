@@ -12,6 +12,7 @@ export interface ApiRouteBody {
   error?: unknown;
   message?: unknown;
   verificationRequired?: unknown;
+  emailVerificationRequired?: unknown;
   emailSent?: unknown;
   user?: unknown;
   data?: unknown;

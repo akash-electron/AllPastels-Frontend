@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Rating } from "@/components/ui/Rating";
@@ -32,6 +33,8 @@ interface ProductCardProps {
   sizes?: string;
   /** Preload the image — only for above-the-fold cards. */
   preload?: boolean;
+  /** Optional card-specific actions rendered beneath the metadata. */
+  footer?: ReactNode;
 }
 
 export function ProductCard({
@@ -42,6 +45,7 @@ export function ProductCard({
   className,
   sizes = "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw",
   preload = false,
+  footer,
 }: ProductCardProps) {
   const href = `/products/${product.slug}`;
   const discount = product.compareAtPrice
@@ -157,6 +161,8 @@ export function ProductCard({
             )}
           </ul>
         )}
+
+        {footer && <div className="mt-4">{footer}</div>}
       </div>
     </article>
   );

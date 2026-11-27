@@ -111,7 +111,7 @@ export function ProductInfo({ product }: { product: Product }) {
     .filter((collection) => collection !== undefined);
 
   const handleAdd = async () => {
-    if (!size) {
+    if (product.sizes.length > 0 && !size) {
       setError(true);
       return;
     }
@@ -120,7 +120,7 @@ export function ProductInfo({ product }: { product: Product }) {
     setError(false);
     setAddError(null);
     setAdding(true);
-    const result = await addToCart(product.id, size, qty);
+    const result = await addToCart(product.id, size ?? "", qty);
     setAdding(false);
 
     if (!result.ok) {
@@ -170,8 +170,13 @@ export function ProductInfo({ product }: { product: Product }) {
           </>
         )}
       </div>
+      {soldOut && (
+        <span className="ap-eyebrow mt-4 inline-flex w-fit items-center bg-cotton-500 px-2.5 py-1 text-[0.625rem] text-ash-100">
+          Out of stock
+        </span>
+      )}
       <p className="ap-body mt-2.5 text-xs text-ink/65">
-        Inclusive of all taxes{soldOut ? " — currently out of stock" : ""}
+        Inclusive of all taxes
       </p>
 
       {/* Description */}

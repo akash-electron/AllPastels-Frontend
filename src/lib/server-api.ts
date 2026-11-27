@@ -101,6 +101,15 @@ export function backendProxyResponse(
         ...(typeof result.body.lookupToken === "string"
           ? { lookupToken: result.body.lookupToken }
           : {}),
+        ...(typeof result.body.message === "string" && result.body.message.trim()
+          ? { message: result.body.message }
+          : {}),
+        ...(typeof result.body.emailVerificationRequired === "boolean"
+          ? { emailVerificationRequired: result.body.emailVerificationRequired }
+          : {}),
+        ...(typeof result.body.emailSent === "boolean"
+          ? { emailSent: result.body.emailSent }
+          : {}),
       },
       { status: result.status },
     );

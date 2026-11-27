@@ -3,15 +3,16 @@ import type { ReactNode } from "react";
 import { AccountCard, AccountPanel } from "@/components/account/AccountPanel";
 import type { Session } from "@/components/store/AuthProvider";
 import { Button } from "@/components/ui/Button";
-import { LockIcon, SettingsIcon, UserIcon } from "@/components/ui/icons";
+import { LockIcon, SettingsIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 /**
- * Settings — profile, preferences and the session.
+ * Settings â€” notification preferences and the session.
  *
  * Preferences are the one genuinely stateful part of the account beyond
  * the cart: they persist to localStorage under a single key, so the
  * switches keep their position across visits instead of being decorative.
+ * Profile details live in their own section so the two concerns stay clear.
  */
 
 interface AccountSettingsProps {
@@ -131,45 +132,18 @@ export function AccountSettings({ session, joined, onSignOut }: AccountSettingsP
     try {
       window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
     } catch {
-      // Private mode or a full quota — the switches still work in memory.
+      // Private mode or a full quota â€” the switches still work in memory.
     }
   }, [prefs]);
 
-  const rows = [
-    { label: "Name", value: session.name },
-    { label: session.email ? "Email" : "Phone", value: session.email ?? session.phone ?? "" },
-    { label: "Member since", value: joined },
-  ];
 
   return (
     <AccountPanel
       id="account-settings"
       eyebrow="Settings"
-      title="Profile & preferences"
+      title="Preferences & session"
     >
       <div className="flex flex-col gap-5">
-        <AccountCard
-          header={
-            <SettingsGroupHeader
-              icon={UserIcon}
-              title="Profile details"
-              hint="How your account reads across the store"
-            />
-          }
-        >
-          <dl>
-            {rows.map((row) => (
-              <div
-                key={row.label}
-                className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-line py-3.5 first:border-t-0 first:pt-0"
-              >
-                <dt className="ap-eyebrow text-ink/45">{row.label}</dt>
-                <dd className="min-w-0 break-words text-sm text-ink">{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </AccountCard>
-
         <AccountCard
           header={
             <SettingsGroupHeader
@@ -229,11 +203,17 @@ export function AccountSettings({ session, joined, onSignOut }: AccountSettingsP
             </div>
           }
         >
-          <p className="ap-body text-sm text-ink/65">
-            You are signed in as <span className="text-ink">{session.email ?? session.phone}</span>.
-            Signing out ends this session on this device — your bag and saved
-            pieces stay right where they are.
-          </p>
+
+<p className="ap-body text-sm text-ink/65">
+  You are signed in as{" "}
+  <span className="text-ink">
+    {session.email ?? session.phone}
+  </span>
+  {joined ? ` and have been a member since ${joined}` : ""}.
+  Signing out ends this session on this device â€” your bag and saved
+  pieces stay right where they are.
+</p>
+
         </AccountCard>
       </div>
     </AccountPanel>

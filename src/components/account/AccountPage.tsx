@@ -15,6 +15,7 @@ import type {
 import { AccountAddresses } from "@/components/account/AccountAddresses";
 import { AccountOrders } from "@/components/account/AccountOrders";
 import { AccountOverview } from "@/components/account/AccountOverview";
+import { AccountProfile } from "@/components/account/AccountProfile";
 import { AccountSettings } from "@/components/account/AccountSettings";
 import { AccountWishlist } from "@/components/account/AccountWishlist";
 import { SignedOutGate } from "@/components/account/SignedOutGate";
@@ -22,10 +23,10 @@ import { useAuth } from "@/components/store/AuthProvider";
 import { useStore } from "@/components/store/StoreProvider";
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
-import { getMyOrders } from "@/api";
-import { getAddresses } from "@/lib/account-data";
+import { getAddresses, getMyOrders } from "@/api";
 import { initialsOf } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import type { Address } from "@/types/address";
 import type { OrderDetail } from "@/types/order";
 
 /**
@@ -38,8 +39,8 @@ import type { OrderDetail } from "@/types/order";
  * never leaves the page — but the selection is mirrored into the URL hash
  * so a section can still be linked and survives a refresh.
  *
- * Orders load from the backend through the orders service; saved addresses
- * still come from `account-data.ts` until that module is integrated.
+ * Orders and saved addresses both load from the backend through their
+ * service modules, with independent loading and retry states.
  */
 
 export function AccountPage() {
@@ -59,6 +60,23 @@ export function AccountPage() {
   const [orders, setOrders] = useState<OrderDetail[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(true);
+  const [addressesError, setAddressesError] = useState<string | null>(null);
+
+  const loadAddresses = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) setAddressesLoading(true);
+    setAddressesError(null);
+    const result = await getAddresses();
+    if (result.ok) {
+      setAddresses(result.addresses);
+    } else if (!silent) {
+      setAddresses([]);
+      setAddressesError(result.error);
+    }
+    if (!silent) setAddressesLoading(false);
+  }, []);
 
   const loadOrders = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
@@ -88,15 +106,26 @@ export function AccountPage() {
     if (!session) return;
     const timer = window.setTimeout(() => {
       void loadOrders();
+      void loadAddresses();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [session, loadOrders]);
+  }, [session, loadOrders, loadAddresses]);
+
+  // Keep the open section in step with hash navigation from the header or a
+  // shared link while the dashboard is already mounted.
+  useEffect(() => {
+    const syncSection = () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (isAccountSection(hash)) setSection(hash);
+    };
+    window.addEventListener("hashchange", syncSection);
+    return () => window.removeEventListener("hashchange", syncSection);
+  }, []);
 
   if (!hydrated || !storeHydrated) return <AccountLoading />;
 
   if (!session) return <SignedOutGate />;
 
-  const addresses = getAddresses();
   const firstName = session.name.split(/\s+/)[0] || session.name;
   const joined = new Date(session.joinedAt).toLocaleDateString("en-IN", {
     month: "long",
@@ -210,9 +239,15 @@ export function AccountPage() {
                   addresses={addresses}
                   ordersLoading={ordersLoading}
                   ordersError={ordersError}
+                  addressesLoading={addressesLoading}
+                  addressesError={addressesError}
                   onRetryOrders={loadOrders}
+                  onRetryAddresses={loadAddresses}
                   onSelect={selectSection}
                 />
+              )}
+              {section === "profile" && (
+                <AccountProfile session={session} joined={joined} />
               )}
               {section === "orders" && (
                 <AccountOrders
@@ -224,7 +259,15 @@ export function AccountPage() {
                 />
               )}
               {section === "wishlist" && <AccountWishlist />}
-              {section === "addresses" && <AccountAddresses addresses={addresses} />}
+              {section === "addresses" && (
+                <AccountAddresses
+                  addresses={addresses}
+                  loading={addressesLoading}
+                  error={addressesError}
+                  onRetry={loadAddresses}
+                  onChanged={loadAddresses}
+                />
+              )}
               {section === "settings" && (
                 <AccountSettings
                   session={session}

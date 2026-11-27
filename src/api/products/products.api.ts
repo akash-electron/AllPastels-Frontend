@@ -41,6 +41,14 @@ export function coerceApiProduct(value: unknown): ApiProduct | null {
       ? record.sizes.filter((item): item is string => typeof item === "string")
       : [],
     isActive: record.isActive !== false,
+    rating:
+      typeof record.rating === "number" && Number.isFinite(record.rating)
+        ? record.rating
+        : 0,
+    reviewCount:
+      typeof record.reviewCount === "number" && Number.isFinite(record.reviewCount)
+        ? record.reviewCount
+        : 0,
     metaTitle: typeof record.metaTitle === "string" ? record.metaTitle : "",
     metaDescription: typeof record.metaDescription === "string" ? record.metaDescription : "",
     metaKeywords: typeof record.metaKeywords === "string" ? record.metaKeywords : "",

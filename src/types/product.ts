@@ -17,6 +17,9 @@ export interface ApiProduct {
   stock: number;
   sizes: string[];
   isActive: boolean;
+  /** Denormalised review aggregate maintained by the backend. */
+  rating: number;
+  reviewCount: number;
   /** SEO copy — empty string means the storefront uses its own defaults. */
   metaTitle: string;
   metaDescription: string;

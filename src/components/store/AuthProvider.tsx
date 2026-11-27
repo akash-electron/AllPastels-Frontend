@@ -40,6 +40,7 @@ export interface Session {
   name: string;
   email: string | null;
   phone?: string | null;
+  isEmailVerified?: boolean;
   /** ISO timestamp — mirrors the backend profile's `createdAt`. */
   joinedAt: string;
 }
@@ -116,6 +117,14 @@ interface AuthValue {
   signInWithGoogle: (idToken: string) => Promise<GoogleSignInResult>;
   verifyOtp: (input: { phone: string; code: string; name?: string }) => Promise<VerifyOtpResult>;
   signOut: () => void;
+  /** Applies a profile update to the stored session without re-authenticating. */
+  updateSession: (user: {
+    name: string;
+    email: string | null;
+    phone?: string | null;
+    isEmailVerified?: boolean;
+    createdAt?: string;
+  }) => void;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -132,18 +141,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     name: string;
     email: string | null;
     phone?: string | null;
+    isEmailVerified?: boolean;
     createdAt?: string;
   }) => {
     const existing = sessionStore.getSnapshot();
+    const sameEmail = Boolean(existing && existing.email === user.email);
     sessionStore.set({
       name: user.name,
       email: user.email,
       phone: user.phone,
+      isEmailVerified: user.isEmailVerified,
       joinedAt:
         user.createdAt ??
-        (existing && existing.email === user.email
-          ? existing.joinedAt
-          : new Date().toISOString()),
+        (sameEmail && existing ? existing.joinedAt : new Date().toISOString()),
     });
   }, []);
 
@@ -184,6 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: result.user.name,
           email: result.user.email,
           phone: result.user.phone,
+          isEmailVerified: result.user.isEmailVerified,
           createdAt: result.user.createdAt,
         });
         notifySessionChange();
@@ -200,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: result.user.name,
             email: result.user.email,
             phone: result.user.phone,
+            isEmailVerified: result.user.isEmailVerified,
             createdAt: result.user.createdAt,
           });
           notifySessionChange();
@@ -217,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: result.user.name,
             email: result.user.email,
             phone: result.user.phone,
+            isEmailVerified: result.user.isEmailVerified,
             createdAt: result.user.createdAt,
           });
           notifySessionChange();
@@ -233,17 +246,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void signOutRequest().finally(notifySessionChange);
   }, []);
 
-  const value = useMemo<AuthValue>(
-    () => ({
-      session,
-      hydrated,
-      signIn,
-      signInWithGoogle: signInWithGoogleHandler,
-      verifyOtp: verifyOtpHandler,
-      signOut,
-    }),
-    [session, hydrated, signIn, signInWithGoogleHandler, verifyOtpHandler, signOut],
+  const updateSession = useCallback<AuthValue["updateSession"]>(
+    (user) => {
+      const existing = sessionStore.getSnapshot();
+      applyUser({
+        ...user,
+        createdAt: user.createdAt ?? existing?.joinedAt,
+      });
+      notifySessionChange();
+    },
+    [applyUser],
   );
+const value = useMemo<AuthValue>(
+  () => ({
+    session,
+    hydrated,
+    signIn,
+    signInWithGoogle: signInWithGoogleHandler,
+    verifyOtp: verifyOtpHandler,
+    signOut,
+    updateSession,
+  }),
+  [
+    session,
+    hydrated,
+    signIn,
+    signInWithGoogleHandler,
+    verifyOtpHandler,
+    signOut,
+    updateSession,
+  ],
+);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

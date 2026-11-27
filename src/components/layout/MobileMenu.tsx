@@ -91,13 +91,13 @@ export function MobileMenu({ open, onClose }: { open: boolean; onClose: () => vo
           </ul>
 
           <Link
-            href="/account"
+            href={session ? "/account#profile" : "/account"}
             onClick={onClose}
             className="mt-8 flex items-center gap-3 text-ink"
           >
             <UserIcon className="h-5 w-5" />
             <span className="ap-eyebrow">
-              {session ? `Account · ${session.name.split(/\s+/)[0]}` : "Sign in / Join"}
+              {session ? `Profile · ${session.name.split(/\s+/)[0]}` : "Sign in / Join"}
             </span>
           </Link>
 

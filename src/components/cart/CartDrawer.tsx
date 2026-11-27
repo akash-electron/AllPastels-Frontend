@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { BagIcon, CloseIcon, TruckIcon } from "@/components/ui/icons";
 import { quoteShipping, quoteTax } from "@/lib/checkout-settings";
 import { productImageUrl } from "@/lib/images";
-import { formatPrice, pluralize } from "@/lib/utils";
+import { cartStockIssue, formatPrice, pluralize } from "@/lib/utils";
 
 /**
  * CartDrawer — the bag as a panel rather than a page.
@@ -119,6 +119,9 @@ export function CartDrawer() {
   const shippingQuote = quoteShipping(checkoutSettings, cartSubtotal);
   const taxQuote = quoteTax(checkoutSettings, cartSubtotal);
   const orderTotal = cartSubtotal + shippingQuote.shipping + taxQuote.amount;
+  const hasStockIssue = cart.some(
+    (line) => cartStockIssue(line.product.stock, line.quantity) !== null,
+  );
 
   return (
     <div
@@ -331,6 +334,11 @@ export function CartDrawer() {
                           <p className="ap-body mt-1 text-xs text-ink/55">
                             {line.product.colors[0]?.name} · Size {line.size}
                           </p>
+                          {cartStockIssue(line.product.stock, line.quantity) && (
+                            <p role="alert" className="ap-body mt-1.5 text-xs font-medium text-burnt">
+                              {cartStockIssue(line.product.stock, line.quantity)}
+                            </p>
+                          )}
                         </div>
 
                         <button
@@ -463,16 +471,34 @@ export function CartDrawer() {
               </dl>
 
               <div className="mt-6 flex flex-col gap-3">
-                <Button
-                  href="/checkout"
-                  variant="primary"
-                  size="lg"
-                  withArrow
-                  className="w-full"
-                  onClick={closeCart}
-                >
-                  Checkout
-                </Button>
+                {hasStockIssue ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="lg"
+                      withArrow
+                      className="w-full"
+                      disabled
+                    >
+                      Checkout unavailable
+                    </Button>
+                    <p role="alert" className="ap-body text-center text-xs text-burnt">
+                      Remove out-of-stock items or reduce quantities to continue.
+                    </p>
+                  </>
+                ) : (
+                  <Button
+                    href="/checkout"
+                    variant="primary"
+                    size="lg"
+                    withArrow
+                    className="w-full"
+                    onClick={closeCart}
+                  >
+                    Checkout
+                  </Button>
+                )}
                 <Button
                   href="/cart"
                   variant="outline"

@@ -8,15 +8,17 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
   addCartItem,
+  addWishlistItem,
   clearCartRequest,
   getCart,
   getCheckoutSettings,
+  getWishlist,
   removeCartItem,
+  removeWishlistItem,
   updateCartItem,
 } from "@/api";
 import { loadProducts } from "@/lib/catalog";
@@ -24,15 +26,16 @@ import { photoSet } from "@/lib/images";
 import { SESSION_CHANGE_EVENT } from "@/lib/session-events";
 import type { CartActionResult, CartResult, ApiCart, ApiCartItem } from "@/types/cart";
 import type { CheckoutSettings } from "@/types/settings";
+import type { WishlistActionResult, WishlistResult } from "@/types/wishlist";
 import type { Product } from "@/lib/types";
 
 /**
- * Client-side commerce state (server-backed cart + local wishlist).
+ * Client-side commerce state (server-backed cart + wishlist).
  *
- * Signed-in customers use the backend cart through the authenticated
- * `/api/cart` Route Handlers. Signed-out shoppers use a localStorage bag that
- * is folded into the server cart when they sign in. The wishlist is always a
- * local, presentation-only collection.
+ * Signed-in customers use the backend cart and wishlist through the
+ * authenticated `/api/cart` and `/api/wishlist` Route Handlers. Signed-out
+ * shoppers use a localStorage bag that is folded into the server cart when
+ * they sign in; the wishlist requires a session and is never stored locally.
  */
 
 export interface CartLine {
@@ -74,7 +77,16 @@ interface StoreValue {
 
   wishlist: string[];
   isWishlisted: (productId: string) => boolean;
-  toggleWishlist: (productId: string) => void;
+  addToWishlist: (productId: string) => Promise<WishlistActionResult>;
+  removeFromWishlist: (productId: string) => Promise<WishlistActionResult>;
+  toggleWishlist: (productId: string) => Promise<WishlistActionResult>;
+  refreshWishlist: () => Promise<void>;
+  wishlistLoading: boolean;
+  wishlistMutating: boolean;
+  wishlistError: string | null;
+  wishlistNeedsAuth: boolean;
+  clearWishlistError: () => void;
+  isWishlistPending: (productId: string) => boolean;
 
   /** True once the initial cart request has completed. */
   hydrated: boolean;
@@ -82,7 +94,6 @@ interface StoreValue {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-const WISHLIST_KEY = "allpastels.wishlist";
 const GUEST_CART_KEY = "allpastels.guest-cart";
 const CLEAR_PENDING_ID = "__all__";
 
@@ -181,55 +192,6 @@ function buildGuestCart(lines: GuestCartLine[], catalog: Product[]): ApiCart {
   };
 }
 
-/* ---------------------------------------------------------------------------
-   Wishlist external store
-   --------------------------------------------------------------------------- */
-
-const EMPTY_WISHLIST: string[] = [];
-
-function createPersistedStore<T>(key: string, fallback: T) {
-  let cache: T | null = null;
-
-  const getSnapshot = (): T => {
-    if (cache === null) cache = readStorage(key, fallback);
-    return cache;
-  };
-
-  const getServerSnapshot = (): T => fallback;
-
-  const set = (value: T) => {
-    cache = value;
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // Private mode or quota exceeded — the session still works in memory.
-    }
-    for (const listener of listeners) listener();
-  };
-
-  const listeners = new Set<() => void>();
-
-  const subscribe = (listener: () => void) => {
-    listeners.add(listener);
-
-    const onStorage = (event: StorageEvent) => {
-      if (event.key !== key) return;
-      cache = null;
-      listener();
-    };
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      listeners.delete(listener);
-      window.removeEventListener("storage", onStorage);
-    };
-  };
-
-  return { getSnapshot, getServerSnapshot, set, subscribe };
-}
-
-const wishlistStore = createPersistedStore<string[]>(WISHLIST_KEY, EMPTY_WISHLIST);
-
 /**
  * Minimal Product projection for a cart line whose product is not present in
  * the loaded catalogue. Name and price are real values from the cart API; the
@@ -269,6 +231,17 @@ function failedResult(
   };
 }
 
+function failedWishlistResult(
+  result: Extract<WishlistResult, { ok: false }>,
+): WishlistActionResult {
+  return {
+    ok: false,
+    error: result.error,
+    reason: result.reason,
+    unauthorized: result.unauthorized,
+  };
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [cartData, setCartData] = useState<ApiCart>(EMPTY_CART);
@@ -280,6 +253,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const [checkoutSettings, setCheckoutSettings] =
     useState<CheckoutSettings | null>(null);
+  const [wishlist, setWishlist] = useState<string[]>([]);
+  const [wishlistLoading, setWishlistLoading] = useState(true);
+  const [wishlistError, setWishlistError] = useState<string | null>(null);
+  const [wishlistNeedsAuth, setWishlistNeedsAuth] = useState(false);
+  const [wishlistPendingIds, setWishlistPendingIds] = useState<string[]>([]);
 
   const cartRef = useRef<ApiCart>(EMPTY_CART);
   const pendingRef = useRef<Set<string>>(new Set());
@@ -290,12 +268,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const cartModeRef = useRef<"guest" | "user">("guest");
   const cartResolvedRef = useRef(false);
   const mergingRef = useRef(false);
-
-  const wishlist = useSyncExternalStore(
-    wishlistStore.subscribe,
-    wishlistStore.getSnapshot,
-    wishlistStore.getServerSnapshot,
-  );
+  const wishlistRef = useRef<string[]>([]);
+  const wishlistPendingRef = useRef<Set<string>>(new Set());
+  const wishlistChainRef = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     let active = true;
@@ -334,6 +309,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     return run;
   }, []);
+
+  const enqueueWishlist = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const run = wishlistChainRef.current.then(task, task);
+    wishlistChainRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, []);
+
+  const applyWishlist = useCallback((productIds: string[]) => {
+    wishlistRef.current = productIds;
+    setWishlist(productIds);
+  }, []);
+
+  const fetchWishlist = useCallback(async () => {
+    const result = await enqueueWishlist(() => getWishlist());
+
+    if (result.ok) {
+      applyWishlist(result.wishlist.productIds);
+      setWishlistNeedsAuth(false);
+      setWishlistError(null);
+    } else if (result.unauthorized) {
+      applyWishlist([]);
+      setWishlistNeedsAuth(true);
+      setWishlistError(null);
+    } else {
+      setWishlistError(result.error);
+    }
+
+    setWishlistLoading(false);
+  }, [applyWishlist, enqueueWishlist]);
+
+  const refreshWishlist = useCallback(async () => {
+    setWishlistLoading(true);
+    await fetchWishlist();
+  }, [fetchWishlist]);
 
   const persistGuestCart = useCallback((lines: GuestCartLine[]) => {
     guestCartRef.current = lines;
@@ -494,9 +506,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => {
       loadGuestCart();
       void fetchCart();
+      void fetchWishlist();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [fetchCart, loadGuestCart]);
+  }, [fetchCart, fetchWishlist, loadGuestCart]);
 
   // Once the catalogue arrives, refresh guest line names and prices without
   // touching the signed-in server cart.
@@ -508,18 +521,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onSessionChange = () => {
       void refreshCart();
+      void refreshWishlist();
     };
     window.addEventListener(SESSION_CHANGE_EVENT, onSessionChange);
     return () => window.removeEventListener(SESSION_CHANGE_EVENT, onSessionChange);
-  }, [refreshCart]);
+  }, [refreshCart, refreshWishlist]);
 
   useEffect(() => {
     const onFocus = () => {
       void fetchCart();
+      void fetchWishlist();
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [fetchCart]);
+  }, [fetchCart, fetchWishlist]);
 
   const beginPending = useCallback((id: string) => {
     pendingRef.current.add(id);
@@ -869,18 +884,118 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const clearCartError = useCallback(() => setCartError(null), []);
 
-  const toggleWishlist = useCallback((productId: string) => {
-    const current = wishlistStore.getSnapshot();
-    wishlistStore.set(
-      current.includes(productId)
-        ? current.filter((id) => id !== productId)
-        : [...current, productId],
+  const beginWishlistPending = useCallback((id: string) => {
+    wishlistPendingRef.current.add(id);
+    setWishlistPendingIds((current) =>
+      current.includes(id) ? current : [...current, id],
     );
   }, []);
+
+  const endWishlistPending = useCallback((id: string) => {
+    wishlistPendingRef.current.delete(id);
+    setWishlistPendingIds((current) => current.filter((value) => value !== id));
+  }, []);
+
+  const addToWishlist = useCallback(
+    async (productId: string): Promise<WishlistActionResult> => {
+      const trimmed = productId?.trim();
+      if (!trimmed) {
+        return {
+          ok: false,
+          error: "Please choose a valid product.",
+          reason: "invalid",
+        };
+      }
+      if (wishlistPendingRef.current.has(trimmed)) {
+        return {
+          ok: false,
+          error: "This piece is already being updated.",
+          reason: "conflict",
+        };
+      }
+      if (wishlistRef.current.includes(trimmed)) return { ok: true };
+
+      beginWishlistPending(trimmed);
+      try {
+        const result = await enqueueWishlist(() => addWishlistItem(trimmed));
+        if (!result.ok) {
+          if (result.unauthorized) {
+            applyWishlist([]);
+            setWishlistNeedsAuth(true);
+          }
+          return failedWishlistResult(result);
+        }
+
+        applyWishlist(result.wishlist.productIds);
+        setWishlistNeedsAuth(false);
+        setWishlistError(null);
+        return { ok: true };
+      } finally {
+        endWishlistPending(trimmed);
+      }
+    },
+    [applyWishlist, beginWishlistPending, endWishlistPending, enqueueWishlist],
+  );
+
+  const removeFromWishlist = useCallback(
+    async (productId: string): Promise<WishlistActionResult> => {
+      const trimmed = productId?.trim();
+      if (!trimmed) {
+        return {
+          ok: false,
+          error: "Please choose a valid product.",
+          reason: "invalid",
+        };
+      }
+      if (wishlistPendingRef.current.has(trimmed)) {
+        return {
+          ok: false,
+          error: "This piece is already being updated.",
+          reason: "conflict",
+        };
+      }
+      if (!wishlistRef.current.includes(trimmed)) return { ok: true };
+
+      beginWishlistPending(trimmed);
+      try {
+        const result = await enqueueWishlist(() => removeWishlistItem(trimmed));
+        if (!result.ok) {
+          if (result.unauthorized) {
+            applyWishlist([]);
+            setWishlistNeedsAuth(true);
+          }
+          return failedWishlistResult(result);
+        }
+
+        applyWishlist(result.wishlist.productIds);
+        setWishlistNeedsAuth(false);
+        setWishlistError(null);
+        return { ok: true };
+      } finally {
+        endWishlistPending(trimmed);
+      }
+    },
+    [applyWishlist, beginWishlistPending, endWishlistPending, enqueueWishlist],
+  );
+
+  const toggleWishlist = useCallback(
+    (productId: string): Promise<WishlistActionResult> =>
+      wishlistRef.current.includes(productId)
+        ? removeFromWishlist(productId)
+        : addToWishlist(productId),
+    [addToWishlist, removeFromWishlist],
+  );
+
+  const clearWishlistError = useCallback(() => setWishlistError(null), []);
 
   const isWishlisted = useCallback(
     (productId: string) => wishlist.includes(productId),
     [wishlist],
+  );
+
+  const isWishlistPending = useCallback(
+    (productId: string) => wishlistPendingIds.includes(productId),
+    [wishlistPendingIds],
   );
 
   const isLinePending = useCallback(
@@ -933,7 +1048,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checkoutSettings,
       wishlist,
       isWishlisted,
+      addToWishlist,
+      removeFromWishlist,
       toggleWishlist,
+      refreshWishlist,
+      wishlistLoading,
+      wishlistMutating: wishlistPendingIds.length > 0,
+      wishlistError,
+      wishlistNeedsAuth,
+      clearWishlistError,
+      isWishlistPending,
       hydrated,
     }),
     [
@@ -954,7 +1078,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       checkoutSettings,
       wishlist,
       isWishlisted,
+      addToWishlist,
+      removeFromWishlist,
       toggleWishlist,
+      refreshWishlist,
+      wishlistLoading,
+      wishlistPendingIds.length,
+      wishlistError,
+      wishlistNeedsAuth,
+      clearWishlistError,
+      isWishlistPending,
       hydrated,
     ],
   );

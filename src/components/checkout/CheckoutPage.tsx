@@ -4,17 +4,29 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { getPaymentOptions, placeGuestOrder, placeOrderFromCart, previewOrder } from "@/api";
+import {
+  createAddress,
+  getAddresses,
+  getPaymentOptions,
+  placeGuestOrder,
+  placeOrderFromCart,
+  previewOrder,
+  setDefaultAddress,
+} from "@/api";
 import { useAuth } from "@/components/store/AuthProvider";
 import { useStore } from "@/components/store/StoreProvider";
 import { Button } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Container";
 import {
+  CheckIcon,
   GiftIcon,
   LockIcon,
+  MapPinIcon,
+  PlusIcon,
   ReturnIcon,
   TruckIcon,
 } from "@/components/ui/icons";
+import type { Address, AddressInput } from "@/types/address";
 import { quoteShipping, quoteTax } from "@/lib/checkout-settings";
 import { productImageUrl } from "@/lib/images";
 import { COUPON_CODE_MAX_LENGTH, normalizeCouponCode } from "@/api/coupons/coupons.api";
@@ -43,6 +55,7 @@ interface FormValues {
   email: string;
   phone: string;
   address: string;
+  line2: string;
   city: string;
   state: string;
   pincode: string;
@@ -53,6 +66,7 @@ const EMPTY_FORM: FormValues = {
   email: "",
   phone: "",
   address: "",
+  line2: "",
   city: "",
   state: "",
   pincode: "",
@@ -70,6 +84,7 @@ function validate(values: FormValues): Partial<Record<keyof FormValues, string>>
     errors.phone = "Please enter a 10-digit phone number";
   }
   if (!values.address.trim()) errors.address = "Please enter your address";
+  if (values.line2.trim().length > 200) errors.line2 = "Address line 2 is too long";
   if (!values.city.trim()) errors.city = "Please enter your city";
   if (!values.state.trim()) errors.state = "Please enter your state";
   if (!/^\d{6}$/.test(values.pincode.trim())) errors.pincode = "Enter a 6-digit PIN code";
@@ -87,6 +102,7 @@ const FIELDS: {
   hint?: string;
   inputMode?: "text" | "email" | "tel" | "numeric";
   maxLength?: number;
+  required?: boolean;
 }[] = [
   {
     name: "fullName",
@@ -122,6 +138,15 @@ const FIELDS: {
     autoComplete: "street-address",
     span: 6,
     placeholder: "House / flat, building, street, area",
+  },
+  {
+    name: "line2",
+    label: "Address line 2 (optional)",
+    type: "text",
+    autoComplete: "address-line2",
+    span: 6,
+    placeholder: "Apartment, suite, landmark",
+    required: false,
   },
   {
     name: "city",
@@ -223,7 +248,7 @@ function CheckoutField({
           inputMode={field.inputMode}
           maxLength={field.maxLength}
           placeholder={field.placeholder}
-          required
+          required={field.required !== false}
           aria-invalid={Boolean(error)}
           aria-describedby={describedBy}
           className="w-full bg-transparent px-3.5 py-3.5 text-sm text-ink outline-none placeholder:text-ink/30"
@@ -253,6 +278,13 @@ export function CheckoutPage() {
   const router = useRouter();
   const checkoutKeyRef = useRef("");
   const [values, setValues] = useState<FormValues>(EMPTY_FORM);
+  const [addressMode, setAddressMode] = useState<"saved" | "new">("new");
+  const [selectedAddressId, setSelectedAddressId] = useState("");
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(false);
+  const [addressesError, setAddressesError] = useState<string | null>(null);
+  const [saveToBook, setSaveToBook] = useState(false);
+  const [makeDefault, setMakeDefault] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
   const [placing, setPlacing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -294,6 +326,36 @@ export function CheckoutPage() {
       }));
     }, 0);
     return () => window.clearTimeout(timer);
+  }, [session]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      if (!session) {
+        setSavedAddresses([]);
+        setAddressesError(null);
+        setAddressesLoading(false);
+        return;
+      }
+      setAddressesLoading(true);
+      setAddressesError(null);
+      void (async () => {
+        const result = await getAddresses();
+        if (cancelled) return;
+        setAddressesLoading(false);
+        if (!result.ok) {
+          setSavedAddresses([]);
+          setAddressesError(result.error);
+          return;
+        }
+        setSavedAddresses(result.addresses);
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [session]);
 
   useEffect(() => {
@@ -359,6 +421,40 @@ export function CheckoutPage() {
     return () => window.clearTimeout(timer);
   }, [normalizedCoupon, cart]);
 
+  const selectedAddress =
+    savedAddresses.find((address) => address.id === selectedAddressId) ?? null;
+  const usingSavedAddress =
+    Boolean(session) && addressMode === "saved" && selectedAddress !== null;
+
+  const selectSavedAddress = (address: Address) => {
+    setAddressMode("saved");
+    setSelectedAddressId(address.id);
+    setMakeDefault(false);
+    setErrors({});
+    setValues((current) => ({
+      ...current,
+      fullName: address.fullName,
+      phone: address.phone,
+      address: address.line1,
+      line2: address.line2,
+      city: address.city,
+      state: address.state,
+      pincode: address.postalCode,
+    }));
+  };
+
+  const selectNewAddress = () => {
+    setAddressMode("new");
+    setSelectedAddressId("");
+    setMakeDefault(false);
+    setErrors({});
+    setValues((current) => ({
+      ...current,
+      fullName: current.fullName || session?.name || "",
+      email: current.email || session?.email || "",
+    }));
+  };
+
   const updateCoupon = (value: string) => {
     setCouponCode(value);
     couponRequestRef.current += 1;
@@ -382,21 +478,76 @@ export function CheckoutPage() {
     event.preventDefault();
     if (placing) return;
 
-    const found = validate(values);
+    const found = usingSavedAddress ? {} : validate(values);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
     setSubmitError(null);
     setPlacing(true);
-    const shippingAddress = {
-      fullName: values.fullName.trim(),
-      line1: values.address.trim(),
-      city: values.city.trim(),
-      state: values.state.trim() || undefined,
-      postalCode: values.pincode.trim(),
-      country: "India",
-      phone: values.phone.trim() || undefined,
-    };
+
+    const shippingAddress =
+      usingSavedAddress && selectedAddress
+        ? {
+            fullName: selectedAddress.fullName,
+            line1: selectedAddress.line1,
+            ...(selectedAddress.line2 ? { line2: selectedAddress.line2 } : {}),
+            city: selectedAddress.city,
+            ...(selectedAddress.state ? { state: selectedAddress.state } : {}),
+            postalCode: selectedAddress.postalCode,
+            country: selectedAddress.country,
+            ...(selectedAddress.phone ? { phone: selectedAddress.phone } : {}),
+          }
+        : {
+            fullName: values.fullName.trim(),
+            line1: values.address.trim(),
+            ...(values.line2.trim() ? { line2: values.line2.trim() } : {}),
+            city: values.city.trim(),
+            ...(values.state.trim() ? { state: values.state.trim() } : {}),
+            postalCode: values.pincode.trim(),
+            country: "India",
+            ...(values.phone.trim() ? { phone: values.phone.trim() } : {}),
+          };
+
+    let shippingAddressId =
+      usingSavedAddress && selectedAddress ? selectedAddress.id : undefined;
+
+    if (
+      session &&
+      usingSavedAddress &&
+      selectedAddress &&
+      makeDefault &&
+      !selectedAddress.isDefault
+    ) {
+      const defaultResult = await setDefaultAddress(selectedAddress.id);
+      if (!defaultResult.ok) {
+        setPlacing(false);
+        setSubmitError(defaultResult.error);
+        return;
+      }
+    }
+
+    if (session && !usingSavedAddress && saveToBook) {
+      const addressInput: AddressInput = {
+        label: "Checkout",
+        fullName: values.fullName.trim(),
+        phone: values.phone.trim(),
+        line1: values.address.trim(),
+        line2: values.line2.trim(),
+        city: values.city.trim(),
+        state: values.state.trim(),
+        postalCode: values.pincode.trim(),
+        country: "India",
+        isDefault: makeDefault,
+      };
+      const saved = await createAddress(addressInput);
+      if (!saved.ok) {
+        setPlacing(false);
+        setSubmitError(saved.error);
+        return;
+      }
+      shippingAddressId = saved.address.id;
+    }
+
     if (!checkoutKeyRef.current) {
       checkoutKeyRef.current = newIdempotencyKey();
     }
@@ -408,6 +559,7 @@ export function CheckoutPage() {
     const result = session
       ? await placeOrderFromCart({
           shippingAddress,
+          shippingAddressId,
           couponCode: normalizedCoupon || undefined,
           paymentMethod,
           paymentProvider,
@@ -526,17 +678,212 @@ export function CheckoutPage() {
               description="We currently deliver across India. Please use the address where someone can receive the parcel during the day."
             />
 
-            <div className="mt-7 grid gap-x-5 gap-y-6 sm:grid-cols-6">
-              {FIELDS.map((field) => (
-                <CheckoutField
-                  key={field.name}
-                  field={field}
-                  value={values[field.name]}
-                  error={errors[field.name]}
-                  onChange={(value) => update(field.name, value)}
-                />
-              ))}
-            </div>
+            {session ? (
+              <div className="mt-7">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <p className="ap-eyebrow text-ink/45">Saved addresses</p>
+                    <p className="ap-body mt-1 text-xs text-ink/50">
+                      Choose where this order should go, or enter a new address.
+                    </p>
+                  </div>
+                  {savedAddresses.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={selectNewAddress}
+                      aria-pressed={addressMode === "new"}
+                      className={cn(
+                        "ap-eyebrow inline-flex items-center gap-2 border px-3 py-2 transition-colors",
+                        addressMode === "new"
+                          ? "border-burnt text-burnt"
+                          : "border-line text-ink/60 hover:border-ash-400",
+                      )}
+                    >
+                      <PlusIcon className="h-3.5 w-3.5" />
+                      New address
+                    </button>
+                  )}
+                </div>
+
+                {addressesLoading ? (
+                  <div className="mt-4 border border-line bg-surface/50 px-4 py-5">
+                    <p className="ap-body text-sm text-ink/55">
+                      Loading your saved addresses…
+                    </p>
+                  </div>
+                ) : addressesError ? (
+                  <div className="mt-4 border border-burnt/40 bg-burnt-900 px-4 py-4">
+                    <p role="alert" className="ap-body text-sm text-burnt-200">
+                      {addressesError} You can still enter a new address below.
+                    </p>
+                  </div>
+                ) : savedAddresses.length > 0 ? (
+                  <div className="mt-4 grid gap-3">
+                    {savedAddresses.map((address) => {
+                      const selected =
+                        addressMode === "saved" &&
+                        address.id === selectedAddressId;
+                      const lines = [
+                        address.line1,
+                        address.line2,
+                        address.city,
+                        address.state,
+                        address.postalCode,
+                      ]
+                        .filter(Boolean)
+                        .join(", ");
+
+                      return (
+                        <button
+                          key={address.id}
+                          type="button"
+                          onClick={() => selectSavedAddress(address)}
+                          aria-pressed={selected}
+                          className={cn(
+                            "relative border p-4 pr-10 text-left transition-colors",
+                            selected
+                              ? "border-burnt bg-burnt-900/30"
+                              : "border-line bg-surface/50 hover:border-ash-400",
+                          )}
+                        >
+                          <span className="flex flex-wrap items-center gap-2">
+                            <MapPinIcon
+                              className={cn(
+                                "h-4 w-4",
+                                selected ? "text-burnt" : "text-ink/40",
+                              )}
+                            />
+                            <span className="text-sm font-medium text-ink">
+                              {address.label}
+                            </span>
+                            {address.isDefault && (
+                              <span className="ap-eyebrow border border-line bg-floral px-2 py-1 text-[0.6rem] text-ink/55">
+                                Default
+                              </span>
+                            )}
+                          </span>
+                          <span className="ap-body mt-2 block text-sm text-ink/70">
+                            {address.fullName} · {address.phone}
+                          </span>
+                          <span className="ap-body mt-1 block text-sm text-ink/55">
+                            {lines}
+                          </span>
+                          {selected && (
+                            <span className="absolute right-4 top-4 flex h-5 w-5 items-center justify-center rounded-full bg-burnt text-floral">
+                              <CheckIcon className="h-3 w-3" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {usingSavedAddress && selectedAddress ? (
+                  <div className="mt-5 border border-line bg-surface/60 p-5">
+                    <p className="ap-eyebrow text-ink/45">Delivering to</p>
+                    <p className="mt-2 text-sm text-ink">
+                      {selectedAddress.fullName}
+                    </p>
+                    <p className="ap-body mt-1 text-sm text-ink/60">
+                      {selectedAddress.phone}
+                    </p>
+                    <p className="ap-body mt-1 text-sm text-ink/60">
+                      {[
+                        selectedAddress.line1,
+                        selectedAddress.line2,
+                        selectedAddress.city,
+                        selectedAddress.state,
+                        selectedAddress.postalCode,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                    {!selectedAddress.isDefault && (
+                      <label className="mt-4 flex items-start gap-3 text-sm text-ink/65">
+                        <input
+                          type="checkbox"
+                          checked={makeDefault}
+                          onChange={(event) =>
+                            setMakeDefault(event.target.checked)
+                          }
+                          className="mt-0.5 h-4 w-4 accent-burnt"
+                        />
+                        Set as my default address
+                      </label>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {savedAddresses.length > 0 && (
+                      <p className="ap-eyebrow mt-6 text-ink/45">New address</p>
+                    )}
+                    <div className="mt-5 grid gap-x-5 gap-y-6 sm:grid-cols-6">
+                      {FIELDS.map((field) => (
+                        <CheckoutField
+                          key={field.name}
+                          field={field}
+                          value={values[field.name]}
+                          error={errors[field.name]}
+                          onChange={(value) => update(field.name, value)}
+                        />
+                      ))}
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+                      <label className="flex items-start gap-3 text-sm text-ink/65">
+                        <input
+                          type="checkbox"
+                          checked={saveToBook}
+                          onChange={(event) => {
+                            setSaveToBook(event.target.checked);
+                            if (!event.target.checked) setMakeDefault(false);
+                          }}
+                          className="mt-0.5 h-4 w-4 accent-burnt"
+                        />
+                        <span>
+                          <span className="block text-sm text-ink">
+                            Save this address to my address book
+                          </span>
+                          <span className="ap-body mt-1 block text-xs text-ink/50">
+                            You can edit it later from your account.
+                          </span>
+                        </span>
+                      </label>
+                      <label
+                        className={cn(
+                          "flex items-start gap-3 text-sm text-ink/65",
+                          !saveToBook && "opacity-50",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={makeDefault}
+                          disabled={!saveToBook}
+                          onChange={(event) =>
+                            setMakeDefault(event.target.checked)
+                          }
+                          className="mt-0.5 h-4 w-4 accent-burnt"
+                        />
+                        <span>Make this my default address</span>
+                      </label>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="mt-7 grid gap-x-5 gap-y-6 sm:grid-cols-6">
+                {FIELDS.map((field) => (
+                  <CheckoutField
+                    key={field.name}
+                    field={field}
+                    value={values[field.name]}
+                    error={errors[field.name]}
+                    onChange={(value) => update(field.name, value)}
+                  />
+                ))}
+              </div>
+            )}
           </section>
 
           <section

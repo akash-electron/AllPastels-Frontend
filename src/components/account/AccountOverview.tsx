@@ -11,7 +11,7 @@ import {
   ReturnIcon,
   TruckIcon,
 } from "@/components/ui/icons";
-import type { SavedAddress } from "@/lib/account-data";
+import type { Address } from "@/types/address";
 import type { OrderDetail } from "@/types/order";
 
 /**
@@ -26,10 +26,13 @@ import type { OrderDetail } from "@/types/order";
 interface AccountOverviewProps {
   firstName: string;
   orders: OrderDetail[];
-  addresses: SavedAddress[];
+  addresses: Address[];
   ordersLoading?: boolean;
   ordersError?: string | null;
+  addressesLoading?: boolean;
+  addressesError?: string | null;
   onRetryOrders?: () => void;
+  onRetryAddresses?: () => void;
   onSelect: (id: AccountSectionId) => void;
 }
 
@@ -73,7 +76,10 @@ export function AccountOverview({
   addresses,
   ordersLoading = false,
   ordersError = null,
+  addressesLoading = false,
+  addressesError = null,
   onRetryOrders,
+  onRetryAddresses,
   onSelect,
 }: AccountOverviewProps) {
   const latestOrder = orders[0];
@@ -146,7 +152,34 @@ export function AccountOverview({
 
         {/* Default address — where that order would go. */}
         <div>
-          {defaultAddress ? (
+          {addressesLoading ? (
+            <AccountCard
+              className="h-full"
+              header={<p className="ap-eyebrow text-ink/45">Default address</p>}
+            >
+              <p className="ap-eyebrow text-ink/40">Loading addresses…</p>
+            </AccountCard>
+          ) : addressesError ? (
+            <AccountCard
+              className="h-full"
+              header={<p className="ap-eyebrow text-ink/45">Default address</p>}
+              footer={
+                onRetryAddresses ? (
+                  <button
+                    type="button"
+                    onClick={onRetryAddresses}
+                    className="ap-eyebrow w-full text-left text-burnt transition-colors duration-300 hover:text-burnt-400"
+                  >
+                    Try again
+                  </button>
+                ) : undefined
+              }
+            >
+              <p role="alert" className="ap-body text-sm text-burnt">
+                {addressesError}
+              </p>
+            </AccountCard>
+          ) : defaultAddress ? (
             <AccountCard
               className="h-full"
               header={
@@ -166,11 +199,23 @@ export function AccountOverview({
                 </button>
               }
             >
-              <p className="text-lg text-ink">{defaultAddress.label}</p>
+              <p className="text-lg text-ink">
+                {defaultAddress.label || "Saved address"}
+              </p>
               <p className="ap-body mt-2 text-sm text-ink/65">
-                {defaultAddress.name}
+                {defaultAddress.fullName}
                 <br />
-                {defaultAddress.lines.join(", ")}
+                {[defaultAddress.line1, defaultAddress.line2]
+                  .filter(Boolean)
+                  .join(", ")}
+                <br />
+                {[
+                  defaultAddress.city,
+                  defaultAddress.state,
+                  defaultAddress.postalCode,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
                 <br />
                 {defaultAddress.phone}
               </p>

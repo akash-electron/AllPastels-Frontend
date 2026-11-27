@@ -2,17 +2,22 @@
 
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getActiveCoupons } from "@/api";
 import { Button } from "@/components/ui/Button";
 import { CheckIcon, CloseIcon, GiftIcon } from "@/components/ui/icons";
 import { SURPRISE_OFFER } from "@/data/site";
+import { formatPrice } from "@/lib/utils";
+import type { PublicCoupon } from "@/types/coupon";
 
 /**
- * SurpriseOffer — the first-visit welcome coupon.
+ * SurpriseOffer — the first-visit welcome offer.
  *
  * Two parts: a small pastel bubble that is always available, and a soft card
- * that opens once on a first visit and stays until dismissed. The reveal, the
- * copy-to-clipboard and the remembered dismissal are all local — there is no
- * backend yet, exactly like the newsletter form.
+ * that opens once on a first visit and stays until dismissed. Coupon codes are
+ * fetched from the admin-managed backend feed, so only currently usable offers
+ * (active, unexpired and not exhausted) ever appear. Checkout still validates
+ * the chosen code server-side, and the reveal/copy/dismissal interactions stay
+ * local, exactly like the newsletter form.
  *
  * Dismissal is remembered in localStorage, so a returning visitor is never
  * nagged. The bubble hides during checkout so nothing competes with paying.
@@ -21,11 +26,23 @@ import { SURPRISE_OFFER } from "@/data/site";
 const STORAGE_KEY = "allpastels.surprise-offer.v1";
 const OPEN_DELAY = 3200;
 
+type CouponsStatus = "loading" | "ready" | "error";
+
+function discountLabel(coupon: PublicCoupon): string {
+  return coupon.type === "percent"
+    ? `${coupon.value}% off`
+    : `${formatPrice(coupon.value)} off`;
+}
+
 export function SurpriseOffer() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [coupons, setCoupons] = useState<PublicCoupon[]>([]);
+  const [status, setStatus] = useState<CouponsStatus>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   const remember = useCallback(() => {
@@ -36,8 +53,33 @@ export function SurpriseOffer() {
     }
   }, []);
 
-  // Auto-open exactly once per visitor.
+  // Load the live offers once on mount (and again on retry). A stale response
+  // is discarded so a slow retry cannot overwrite newer data.
   useEffect(() => {
+    let active = true;
+
+    getActiveCoupons().then((result) => {
+      if (!active) return;
+      if (result.ok) {
+        setCoupons(result.coupons);
+        setStatus("ready");
+        return;
+      }
+      setCoupons([]);
+      setError(result.error);
+      setStatus("error");
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
+
+  // Auto-open exactly once per visitor, and only when there is something to
+  // unwrap. An empty or failed feed never interrupts the first visit.
+  useEffect(() => {
+    if (status !== "ready" || coupons.length === 0) return;
+
     let seen = false;
     try {
       seen = window.localStorage.getItem(STORAGE_KEY) === "seen";
@@ -52,7 +94,7 @@ export function SurpriseOffer() {
     }, OPEN_DELAY);
 
     return () => window.clearTimeout(timer);
-  }, [remember]);
+  }, [status, coupons.length, remember]);
 
   // Lock the page behind the card and wire up Escape while it is open.
   useEffect(() => {
@@ -76,14 +118,23 @@ export function SurpriseOffer() {
     };
   }, [open]);
 
-  const copyCode = useCallback(async () => {
+  const copyCode = useCallback(async (code: string) => {
     try {
-      await navigator.clipboard.writeText(SURPRISE_OFFER.code);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2200);
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      window.setTimeout(() => {
+        setCopiedCode((current) => (current === code ? null : current));
+      }, 2200);
     } catch {
       /* Clipboard blocked — the code is still on screen to type by hand. */
     }
+  }, []);
+
+  const retry = useCallback(() => {
+    setRevealed(false);
+    setError(null);
+    setStatus("loading");
+    setReloadKey((current) => current + 1);
   }, []);
 
   // Nothing should compete with paying.
@@ -122,7 +173,7 @@ export function SurpriseOffer() {
             tabIndex={-1}
           />
 
-          <div className="pointer-events-none absolute inset-0 flex items-end justify-center p-4 sm:items-center sm:p-6">
+          <div className="pointer-events-none absolute inset-0 flex items-end justify-center overflow-y-auto p-4 sm:items-center sm:p-6">
             <div className="ap-anim-rise pointer-events-auto relative w-full max-w-md overflow-hidden rounded-3xl bg-gradient-to-br from-cotton-800 via-floral to-powder-800 p-7 shadow-2xl sm:p-9">
               {/* Soft decorative dots */}
               <div
@@ -158,56 +209,116 @@ export function SurpriseOffer() {
                   {SURPRISE_OFFER.description}
                 </p>
 
-                {revealed ? (
-                  <div className="mt-7">
-                    <div className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-ink/30 bg-floral/80 px-5 py-4">
-                      <span className="font-display text-xl tracking-[0.16em] text-ink sm:text-2xl">
-                        {SURPRISE_OFFER.code}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={copyCode}
-                        className="ap-eyebrow inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-floral transition-colors duration-500 hover:bg-burnt hover:text-floral-900"
-                      >
-                        {copied ? (
-                          <>
-                            <CheckIcon className="h-3.5 w-3.5" />
-                            Copied
-                          </>
-                        ) : (
-                          "Copy code"
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="mt-5">
-                      <Button
-                        href="/new-arrivals"
-                        variant="primary"
-                        size="md"
-                        withArrow
-                        className="w-full"
-                      >
-                        Shop new in
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setRevealed(true)}
-                    className="group mt-7 flex w-full items-center gap-4 rounded-2xl bg-floral/85 px-5 py-4 text-left ring-1 ring-floral transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:bg-floral hover:shadow-lg"
+                {status === "loading" && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="ap-body mt-7 rounded-2xl border border-dashed border-ink/20 bg-floral/70 px-5 py-5 text-sm text-ink/60"
                   >
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-burnt text-floral-900 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-6">
-                      <GiftIcon className="h-6 w-6" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm text-ink">Tap to unwrap</span>
-                      <span className="ap-eyebrow text-ink/45">Your code is inside</span>
-                    </span>
-                  </button>
+                    Fetching today&apos;s offers&hellip;
+                  </p>
                 )}
+
+                {status === "error" && (
+                  <div className="mt-7 rounded-2xl border border-dashed border-burnt/40 bg-floral/80 px-5 py-5">
+                    <p className="ap-body text-sm text-ink/70">
+                      {error ?? "We could not load today's offers."}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-4"
+                      onClick={retry}
+                    >
+                      Try again
+                    </Button>
+                  </div>
+                )}
+
+                {status === "ready" && coupons.length === 0 && (
+                  <p className="ap-body mt-7 rounded-2xl border border-dashed border-ink/20 bg-floral/70 px-5 py-5 text-sm text-ink/60">
+                    No offers are running right now. Check back soon for a little
+                    treat.
+                  </p>
+                )}
+
+                {status === "ready" &&
+                  coupons.length > 0 &&
+                  (revealed ? (
+                    <div className="mt-7">
+                      <ul className="flex max-h-64 flex-col gap-3 overflow-y-auto pr-1">
+                        {coupons.map((coupon) => (
+                          <li
+                            key={coupon.code}
+                            className="rounded-2xl border border-dashed border-ink/30 bg-floral/80 px-4 py-3.5"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="min-w-0 truncate font-display text-lg tracking-[0.14em] text-ink sm:text-xl">
+                                {coupon.code}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => copyCode(coupon.code)}
+                                className="ap-eyebrow inline-flex shrink-0 items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-floral transition-colors duration-500 hover:bg-burnt hover:text-floral-900"
+                                aria-label={`Copy code ${coupon.code}`}
+                              >
+                                {copiedCode === coupon.code ? (
+                                  <>
+                                    <CheckIcon className="h-3.5 w-3.5" />
+                                    Copied
+                                  </>
+                                ) : (
+                                  "Copy code"
+                                )}
+                              </button>
+                            </div>
+
+                            <p className="ap-body mt-2 text-xs leading-relaxed text-ink/60">
+                              <span className="text-burnt">{discountLabel(coupon)}</span>
+                              {coupon.minOrderAmount > 0
+                                ? ` · on orders over ${formatPrice(coupon.minOrderAmount)}`
+                                : ""}
+                              {coupon.maxDiscountAmount !== null
+                                ? ` · up to ${formatPrice(coupon.maxDiscountAmount)}`
+                                : ""}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <div className="mt-5">
+                        <Button
+                          href="/new-arrivals"
+                          variant="primary"
+                          size="md"
+                          withArrow
+                          className="w-full"
+                        >
+                          Shop new in
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setRevealed(true)}
+                      className="group mt-7 flex w-full items-center gap-4 rounded-2xl bg-floral/85 px-5 py-4 text-left ring-1 ring-floral transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:bg-floral hover:shadow-lg"
+                    >
+                      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-burnt text-floral-900 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:rotate-6">
+                        <GiftIcon className="h-6 w-6" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm text-ink">Tap to unwrap</span>
+                        <span className="ap-eyebrow text-ink/45">
+                          {coupons.length === 1
+                            ? "Your code is inside"
+                            : `${coupons.length} offers inside`}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
 
                 <p className="ap-body mt-6 text-[0.6875rem] leading-relaxed text-ink/50">
                   {SURPRISE_OFFER.note}

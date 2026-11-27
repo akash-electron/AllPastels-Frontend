@@ -48,3 +48,21 @@ export function buildQuery(params: Record<string, string | string[] | undefined>
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
+
+/**
+ * Explains why a bag line can no longer be checked out.
+ *
+ * Undefined stock means the catalogue snapshot did not include a stock value,
+ * so the server remains the source of truth for that line.
+ */
+export function cartStockIssue(
+  stock: number | undefined,
+  quantity: number,
+): string | null {
+  if (typeof stock !== "number") return null;
+  if (stock <= 0) return "Out of stock";
+  if (quantity > stock) {
+    return `Only ${stock} ${stock === 1 ? "unit" : "units"} available`;
+  }
+  return null;
+}

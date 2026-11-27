@@ -86,6 +86,8 @@ export interface CheckoutShippingAddress {
 
 export interface PlaceOrderInput {
   shippingAddress: CheckoutShippingAddress;
+  /** Optional address-book entry; the backend copies it server-side. */
+  shippingAddressId?: string;
   couponCode?: string;
   paymentMethod?: OrderPaymentMethod;
   paymentProvider?: "razorpay" | "stripe";

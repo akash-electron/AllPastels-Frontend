@@ -146,9 +146,9 @@ export function Navbar() {
             </button>
 
             <Link
-              href="/account"
+              href={session ? "/account#profile" : "/account"}
               className="hidden h-11 w-11 items-center justify-center text-ink transition-opacity hover:opacity-70 sm:flex"
-              aria-label={session ? `Your account, signed in as ${session.name}` : "Sign in or create an account"}
+              aria-label={session ? `Your profile, signed in as ${session.name}` : "Sign in or create an account"}
             >
               {/* Signed in: the monogram replaces the generic icon so the
                   header reflects the session at a glance. */}

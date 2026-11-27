@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import {
   BagIcon,
+  EditIcon,
   HeartIcon,
   MapPinIcon,
   SettingsIcon,
@@ -14,12 +15,13 @@ import { cn } from "@/lib/utils";
  *
  * The sidebar carries the desktop dashboard (sticky, with counts and a
  * support card beneath it); the rail is the phone version of exactly the
- * same list, scrollable so five sections still fit on one line. Because
+ * same list, scrollable so every section stays reachable on one row. Because
  * both read from `ACCOUNT_SECTIONS`, the two can never drift apart.
  */
 
 export type AccountSectionId =
   | "overview"
+  | "profile"
   | "orders"
   | "wishlist"
   | "addresses"
@@ -35,6 +37,7 @@ export interface AccountSectionItem {
 
 export const ACCOUNT_SECTIONS: AccountSectionItem[] = [
   { id: "overview", label: "Account overview", icon: UserIcon },
+  { id: "profile", label: "Profile", icon: EditIcon },
   { id: "orders", label: "Orders", icon: BagIcon },
   { id: "wishlist", label: "Wishlist", icon: HeartIcon },
   { id: "addresses", label: "Addresses", icon: MapPinIcon },

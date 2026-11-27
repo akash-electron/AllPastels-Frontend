@@ -21,15 +21,17 @@ export const announcements: string[] = [
 ];
 
 /**
- * First-visit "surprise offer", surfaced by the <SurpriseOffer /> widget.
- * Kept here so the code, the value and the wording have a single source.
+ * Copy for the first-visit "surprise offer", surfaced by <SurpriseOffer />.
+ *
+ * Coupon codes are no longer hardcoded: the widget reads the admin-managed
+ * active offers from the backend. This module only keeps the wording in one
+ * place.
  */
 export const SURPRISE_OFFER = {
-  code: "PASTELS10",
-  headline: "Unwrap 10% off your first order",
+  headline: "A little welcome gift",
   description:
-    "A little welcome gift from us. Reveal your code, then use it at checkout.",
-  note: "One surprise per customer. Valid on full-price styles and not combinable with other offers.",
+    "Reveal the offers running at AllPastels right now, then use one at checkout.",
+  note: "One offer per order. Availability and the final discount are confirmed at checkout.",
 } as const;
 
 /* -------------------------------------------------------------- Footer --- */

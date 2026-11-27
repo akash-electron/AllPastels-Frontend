@@ -31,6 +31,8 @@ import type {
   ResetPasswordResult,
   SessionRestoreResult,
   SignInResult,
+  UpdateProfileInput,
+  UpdateProfileResult,
   VerifyOtpResult,
   VerifyResult,
 } from "@/types/auth";
@@ -189,6 +191,54 @@ export async function restoreSession(): Promise<SessionRestoreResult> {
   const user = body.ok === true ? coerceRouteUser(body.user) : null;
   if (user) return { ok: true, user };
   return { ok: false };
+}
+
+/**
+ * `PUT /auth/profile` — updates the signed-in customer's own profile. A
+ * changed email is re-verified by the backend; the UI surfaces that state
+ * rather than assuming the new address is immediately usable for login.
+ */
+export async function updateProfile(
+  input: UpdateProfileInput,
+): Promise<UpdateProfileResult> {
+  let response: Response | null;
+  try {
+    response = await apiRequest("/auth/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: input.name.trim(),
+        email: input.email.trim().toLowerCase(),
+        phone: (input.phone ?? "").trim(),
+      }),
+    });
+  } catch {
+    response = null;
+  }
+  if (!response) return { ok: false, error: NETWORK_ERROR_MESSAGE };
+
+  const body = await readRouteBody(response, "Profile update did not go through.");
+  if (body.ok !== true) {
+    return {
+      ok: false,
+      error: typeof body.error === "string" ? body.error : "Profile update did not go through.",
+      unauthorized: body.unauthorized === true || response.status === 401,
+    };
+  }
+
+  const user = coerceRouteUser(body.data);
+  if (!user) {
+    return { ok: false, error: "The profile update response was incomplete." };
+  }
+
+  return {
+    ok: true,
+    user,
+    emailVerificationRequired: body.emailVerificationRequired === true,
+    emailSent: body.emailSent === true,
+    message:
+      typeof body.message === "string" ? body.message : "Profile updated.",
+  };
 }
 
 /**

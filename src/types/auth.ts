@@ -55,3 +55,19 @@ export type ForgotPasswordResult =
   | { ok: false; error: string };
 
 export type ResetPasswordResult = { ok: true } | { ok: false; error: string };
+
+export interface UpdateProfileInput {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export type UpdateProfileResult =
+  | {
+      ok: true;
+      user: AuthUser;
+      emailVerificationRequired: boolean;
+      emailSent: boolean;
+      message: string;
+    }
+  | { ok: false; error: string; unauthorized?: boolean };

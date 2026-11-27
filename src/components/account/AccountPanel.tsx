@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 /**
  * AccountPanel — the framed content card every account section renders into.
  *
- * One shell for all five sections is what keeps the dashboard reading as a
+ * One shell for every section is what keeps the dashboard reading as a
  * single designed surface: identical eyebrow, identical title scale, one
  * header rule, one padding rhythm. Sections only ever supply content.
  */

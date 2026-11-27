@@ -6,7 +6,7 @@ import { useStore } from "@/components/store/StoreProvider";
 import { Button } from "@/components/ui/Button";
 import { quoteShipping, quoteTax } from "@/lib/checkout-settings";
 import { productImageUrl } from "@/lib/images";
-import { formatPrice, pluralize } from "@/lib/utils";
+import { cartStockIssue, formatPrice, pluralize } from "@/lib/utils";
 import { ArrowRightIcon, CloseIcon } from "@/components/ui/icons";
 
 /**
@@ -105,6 +105,9 @@ export function CartPage() {
   const shippingQuote = quoteShipping(checkoutSettings, cartSubtotal);
   const taxQuote = quoteTax(checkoutSettings, cartSubtotal);
   const orderTotal = cartSubtotal + shippingQuote.shipping + taxQuote.amount;
+  const hasStockIssue = cart.some(
+    (line) => cartStockIssue(line.product.stock, line.quantity) !== null,
+  );
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-5 py-10 sm:px-8 sm:py-14 lg:px-12">
@@ -176,6 +179,11 @@ export function CartPage() {
                       <p className="ap-body mt-1.5 text-xs text-ink/55">
                         {line.product.colors[0]?.name} · Size {line.size}
                       </p>
+                      {cartStockIssue(line.product.stock, line.quantity) && (
+                        <p role="alert" className="ap-body mt-2 text-xs font-medium text-burnt">
+                          {cartStockIssue(line.product.stock, line.quantity)}
+                        </p>
+                      )}
                     </div>
 
                     <button
@@ -317,9 +325,27 @@ export function CartPage() {
               </div>
             </dl>
 
-            <Button href="/checkout" variant="primary" size="lg" withArrow className="mt-7 w-full">
-              Checkout
-            </Button>
+            {hasStockIssue ? (
+              <>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="lg"
+                  withArrow
+                  className="mt-7 w-full"
+                  disabled
+                >
+                  Checkout unavailable
+                </Button>
+                <p role="alert" className="ap-body mt-4 text-center text-xs text-burnt">
+                  Remove out-of-stock items or reduce quantities to continue.
+                </p>
+              </>
+            ) : (
+              <Button href="/checkout" variant="primary" size="lg" withArrow className="mt-7 w-full">
+                Checkout
+              </Button>
+            )}
 
             <p className="ap-body mt-4 text-center text-xs text-ink/50">
               {taxQuote.ratePercent > 0

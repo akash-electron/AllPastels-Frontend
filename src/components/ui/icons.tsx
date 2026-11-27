@@ -225,6 +225,28 @@ export function MapPinIcon(props: IconProps) {
   );
 }
 
+/** Pencil — edit actions in the address book. */
+export function EditIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 20h4.5L19 9.5a2.1 2.1 0 0 0-3-3L5.5 17 4 20Z" />
+      <path d="M14.5 6.5l3 3" />
+    </Svg>
+  );
+}
+
+/** Bin — delete actions in the address book. */
+export function TrashIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.5 7h15" />
+      <path d="M9 7V5.5h6V7" />
+      <path d="M6.5 7l.8 12h9.4l.8-12" />
+      <path d="M10 10.5v5M14 10.5v5" />
+    </Svg>
+  );
+}
+
 /** Sliders — the settings entry in the account navigation. */
 export function SettingsIcon(props: IconProps) {
   return (

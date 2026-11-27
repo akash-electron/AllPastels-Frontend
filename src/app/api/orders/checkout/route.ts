@@ -8,11 +8,14 @@ import { backendApi, backendProxyResponse } from "@/lib/server-api";
 
 interface CheckoutPayload {
   shippingAddress?: unknown;
+  shippingAddressId?: unknown;
   couponCode?: unknown;
   paymentMethod?: unknown;
   paymentProvider?: unknown;
   idempotencyKey?: unknown;
 }
+
+const OBJECT_ID = /^[a-f0-9]{24}$/i;
 
 export async function POST(request: Request) {
   let payload: CheckoutPayload;
@@ -25,10 +28,15 @@ export async function POST(request: Request) {
     );
   }
 
+  const hasSavedAddressId =
+    typeof payload.shippingAddressId === "string" &&
+    OBJECT_ID.test(payload.shippingAddressId);
+
   if (
-    !payload.shippingAddress ||
-    typeof payload.shippingAddress !== "object" ||
-    Array.isArray(payload.shippingAddress)
+    !hasSavedAddressId &&
+    (!payload.shippingAddress ||
+      typeof payload.shippingAddress !== "object" ||
+      Array.isArray(payload.shippingAddress))
   ) {
     return Response.json(
       { ok: false, error: "A delivery address is required." },
@@ -36,15 +44,28 @@ export async function POST(request: Request) {
     );
   }
 
+  if (payload.shippingAddressId !== undefined && !hasSavedAddressId) {
+    return Response.json(
+      { ok: false, error: "Invalid saved address." },
+      { status: 400 },
+    );
+  }
+
   const forwarded: {
-    shippingAddress: unknown;
+    shippingAddress?: unknown;
+    shippingAddressId?: string;
     couponCode?: string;
     paymentMethod?: "cod" | "online";
     paymentProvider?: "razorpay" | "stripe";
     idempotencyKey?: string;
-  } = {
-    shippingAddress: payload.shippingAddress,
-  };
+  } = {};
+
+  if (payload.shippingAddress && typeof payload.shippingAddress === "object") {
+    forwarded.shippingAddress = payload.shippingAddress;
+  }
+  if (hasSavedAddressId) {
+    forwarded.shippingAddressId = payload.shippingAddressId as string;
+  }
 
   if (payload.couponCode !== undefined) {
     if (typeof payload.couponCode !== "string") {

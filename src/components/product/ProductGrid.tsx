@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { StaggerGrid } from "@/components/animations/StaggerGrid";
 import { ProductCard } from "@/components/product/ProductCard";
 import { Button } from "@/components/ui/Button";
@@ -25,6 +26,8 @@ interface ProductGridProps {
   /** Preload the first row's images — only for above-the-fold grids. */
   preloadFirstRow?: boolean;
   className?: string;
+  /** Optional card footer content, such as wishlist actions. */
+  renderActions?: (product: Product) => ReactNode;
 }
 
 export function ProductGrid({
@@ -35,6 +38,7 @@ export function ProductGrid({
   heading,
   preloadFirstRow = false,
   className,
+  renderActions,
 }: ProductGridProps) {
   if (products.length === 0) {
     return (
@@ -67,6 +71,7 @@ export function ProductGrid({
             showRating={showRating}
             showQuickAdd={showQuickAdd}
             preload={preloadFirstRow && index < 4}
+            footer={renderActions?.(product)}
           />
         ))}
       </StaggerGrid>
